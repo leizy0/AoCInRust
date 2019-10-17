@@ -1,38 +1,58 @@
-use std::io::{BufRead, BufReader};
-use std::fs::File;
 use regex::Regex;
+use std::fs::File;
+use std::io::{BufRead, BufReader};
 use std::str::FromStr;
 
 fn main() {
     let input_path = "./input.txt";
     let input_file = File::open(input_path).expect(&format!("Failed to open file {}", input_path));
-    let rect_list: Vec<Rect> = BufReader::new(input_file).lines().map(|l| Rect::new(&l.unwrap())).collect();
+    let rect_list: Vec<Rect> = BufReader::new(input_file)
+        .lines()
+        .map(|l| Rect::new(&l.unwrap()))
+        .collect();
 
-    let mut fabric = Fabric::new(1000, 1000);
-    for rect in &rect_list {
-        fabric.cut(rect);
+    let rect_count = rect_list.len();
+    for i in 0..rect_count {
+        let mut has_overlapped = false;
+        for j in 0..rect_count {
+            if i != j && is_overlap(&rect_list[i], &rect_list[j]) {
+                has_overlapped = true;
+                break;
+            }
+        }
+
+        if !has_overlapped {
+            println!(
+                "Rectangle(#{}) doesn't overlap with others",
+                rect_list[i].id()
+            );
+            return;
+        }
     }
 
-    println!("Total {} square inches overlapped", fabric.overlap_area());
+    println!("No non-overlapped rectangle found");
+    std::process::exit(1);
 }
 
 pub struct Rect {
+    n: u32,
     x: u32,
     y: u32,
     w: u32,
-    h: u32
+    h: u32,
 }
 
 impl Rect {
     pub fn new(desc: &str) -> Rect {
         // #1375 @ 516,787: 23x11
-        let pattern = Regex::new(r"#\d+ @ (\d+),(\d+): (\d+)x(\d+)").unwrap();
+        let pattern = Regex::new(r"#(\d+) @ (\d+),(\d+): (\d+)x(\d+)").unwrap();
         let cap = pattern.captures(desc).unwrap();
         Rect {
-            x: u32::from_str(cap.get(1).unwrap().as_str()).unwrap(),
-            y: u32::from_str(cap.get(2).unwrap().as_str()).unwrap(),
-            w: u32::from_str(cap.get(3).unwrap().as_str()).unwrap(),
-            h: u32::from_str(cap.get(4).unwrap().as_str()).unwrap()
+            n: u32::from_str(cap.get(1).unwrap().as_str()).unwrap(),
+            x: u32::from_str(cap.get(2).unwrap().as_str()).unwrap(),
+            y: u32::from_str(cap.get(3).unwrap().as_str()).unwrap(),
+            w: u32::from_str(cap.get(4).unwrap().as_str()).unwrap(),
+            h: u32::from_str(cap.get(5).unwrap().as_str()).unwrap(),
         }
     }
 
@@ -44,39 +64,8 @@ impl Rect {
         (self.x + self.w, self.y + self.h)
     }
 
-    pub fn width(&self) -> u32 {
-        self.w
-    }
-
-    pub fn height(&self) -> u32 {
-        self.h
-    }
-}
-
-#[derive(Copy, Clone)]
-enum UnitStatus {
-    Empty,
-    Cut,
-    Count
-}
-
-pub struct Fabric {
-    w: u32,
-    h: u32,
-    canvas: Vec<UnitStatus>,
-    overlap_count: u32
-}
-
-impl Fabric {
-    pub fn new(width: u32, height: u32) -> Fabric {
-        let canv = vec![UnitStatus::Empty; (width * height) as usize];
-
-        Fabric {
-            w: width,
-            h: height,
-            canvas: canv,
-            overlap_count: 0
-        }
+    pub fn id(&self) -> u32 {
+        self.n
     }
 
     pub fn width(&self) -> u32 {
@@ -86,26 +75,20 @@ impl Fabric {
     pub fn height(&self) -> u32 {
         self.h
     }
+}
 
-    pub fn overlap_area(&self) -> u32 {
-        self.overlap_count
-    }
+fn is_overlap(rect1: &Rect, rect2: &Rect) -> bool {
+    !is_not_overlap(rect1, rect2)
+}
 
-    pub fn cut(&mut self, rect: &Rect) {
-        let (tl_x, tl_y) = rect.top_left();
-        let (br_x, br_y) = rect.bottom_right();
-        for y in tl_y..br_y {
-            for x in tl_x..br_x {
-                let status = &mut self.canvas[(y * self.w + x) as usize];
-                match *status {
-                    UnitStatus::Empty => *status = UnitStatus::Cut,
-                    UnitStatus::Cut => {
-                        self.overlap_count += 1;
-                        *status = UnitStatus::Count;
-                    },
-                    _ => ()
-                };
-            }
-        }
-    }
+fn is_not_overlap(rect1: &Rect, rect2: &Rect) -> bool {
+    let (tl_x1, tl_y1) = rect1.top_left();
+    let (br_x1, br_y1) = rect1.bottom_right();
+    let (tl_x2, tl_y2) = rect2.top_left();
+    let (br_x2, br_y2) = rect2.bottom_right();
+
+    br_x1 <= tl_x2 ||
+    br_y1 <= tl_y2 ||
+    br_x2 <= tl_x1 ||
+    br_y2 <= tl_y1
 }
