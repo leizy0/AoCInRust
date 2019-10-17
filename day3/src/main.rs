@@ -63,16 +63,13 @@ enum UnitStatus {
 pub struct Fabric {
     w: u32,
     h: u32,
-    canvas: Vec<Vec<UnitStatus>>,
+    canvas: Vec<UnitStatus>,
     overlap_count: u32
 }
 
 impl Fabric {
     pub fn new(width: u32, height: u32) -> Fabric {
-        let mut canv = Vec::with_capacity(height as usize);
-        for _i in 0..height {
-            canv.push(vec![UnitStatus::Empty; width as usize]);
-        }
+        let canv = vec![UnitStatus::Empty; (width * height) as usize];
 
         Fabric {
             w: width,
@@ -99,7 +96,7 @@ impl Fabric {
         let (br_x, br_y) = rect.bottom_right();
         for y in tl_y..br_y {
             for x in tl_x..br_x {
-                let status = &mut self.canvas[y as usize][x as usize];
+                let status = &mut self.canvas[(y * self.w + x) as usize];
                 match *status {
                     UnitStatus::Empty => *status = UnitStatus::Cut,
                     UnitStatus::Cut => {
