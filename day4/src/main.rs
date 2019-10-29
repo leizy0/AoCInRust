@@ -41,35 +41,36 @@ fn main() {
     // Map guard id to his(her) ShiftRecord list
     let record_map = vec_to_map(record_list, |sr| sr.guard_id);
 
-    // Find guard with the most minutes asleep
-    let max_slp_guard_rec = record_map
+    // Compute max asleep time and minute count of every guard
+    let asleep_info_list: Vec<(u32, u32, u32)> = record_map
         .iter()
-        .max_by_key(|(_id, rec_list)| {
-            rec_list
+        .map(|(id, rec_list)| {
+            let asleep_list: Vec<&(u32, u32)> = rec_list
                 .iter()
-                .fold(0, |acc, rec| acc + rec.total_asleep_min())
+                .flat_map(|rec| rec.asleep_range_list())
+                .collect();
+            let asleep_hist = comp_asleep_hist(&asleep_list);
+            let (max_asleep_ind, max_asleep_min) = asleep_hist
+                .iter()
+                .enumerate()
+                .max_by_key(|(_ind, &min)| min)
+                .unwrap();
+            (*id, *max_asleep_min, max_asleep_ind as u32)
         })
+        .collect();
+
+    let (max_asleep_id, max_asleep_min, max_asleep_ind) = asleep_info_list
+        .iter()
+        .max_by_key(|(_id, min, _ind)| min)
         .unwrap();
 
-    // Count his(her) asleep times in every minutes of midnight, find minute with largest count
-    let (max_asleep_id, max_asleep_rec_list) = max_slp_guard_rec;
-    let asleep_list: Vec<&(u32, u32)> = max_asleep_rec_list
-        .iter()
-        .flat_map(|rec| rec.asleep_range_list())
-        .collect();
-    let asleep_hist = comp_asleep_hist(&asleep_list);
-    let (max_asleep_ind, max_asleep_min) = asleep_hist
-        .iter()
-        .enumerate()
-        .max_by_key(|(_ind, &min)| min)
-        .unwrap();
     println!(
-        "Guard #{} has the most total asleep minutes({}), the most possible alseep time is at 00:{}",
+        "Guard #{} has the most asleep minutes({}) at same time(00:{})",
         max_asleep_id, max_asleep_min, max_asleep_ind
     );
 
     // Comput and print final result
-    let result = max_asleep_id * (max_asleep_ind as u32);
+    let result = max_asleep_id * max_asleep_ind;
     println!("Final answer is {}", result);
 }
 
