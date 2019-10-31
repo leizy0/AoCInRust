@@ -1,3 +1,4 @@
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::iter::FromIterator;
@@ -12,13 +13,25 @@ fn main() {
         .collect();
 
     for (ind, input) in input_list.iter().enumerate() {
-        let mut polymer = Polymer::new(input);
-        let result = polymer.react();
+        let polymer = Polymer::new(input);
+        let unit_types = polymer.unit_types();
+
+        let mut res_map = HashMap::new();
+        for unit_type in unit_types {
+            let mut new_polymer = polymer.remove_unit_type(unit_type);
+            let res = new_polymer.react();
+            let res_char_len = res.chars().count();
+            if !res_map.contains_key(&unit_type) {
+                res_map.insert(unit_type, res_char_len);
+            } else {
+                panic!("Unit type({}) appears twice in unit type list, should be once");
+            }
+        }
+
+        let (min_unit_type, min_len) = res_map.iter().min_by_key(|(_, &v)| v).unwrap();
         println!(
-            "After reaction, polymer(#{}) has {} units remained({})",
-            ind,
-            result.chars().count(),
-            result
+            "Polymer(#{}) can achive the least unit length({}), after unit type({}) removed",
+            ind, min_len, min_unit_type
         );
     }
 }
@@ -69,6 +82,30 @@ impl Polymer {
             .copied()
             .collect();
         self.link()
+    }
+
+    pub fn unit_types(&self) -> HashSet<char> {
+        self.unit_list
+            .iter()
+            .map(|c| {
+                if c.is_ascii() {
+                    c.to_ascii_lowercase()
+                } else {
+                    panic!("Non-ascii upper or lower case unit isn't supported yet");
+                }
+            })
+            .collect()
+    }
+
+    pub fn remove_unit_type(&self, rmv_type: char) -> Polymer {
+        Polymer {
+            unit_list: self
+                .unit_list
+                .iter()
+                .filter(|c| c.to_ascii_lowercase() != rmv_type)
+                .copied()
+                .collect(),
+        }
     }
 
     fn react_at(&mut self, u0_pos: usize, u1_pos: usize) -> bool {
