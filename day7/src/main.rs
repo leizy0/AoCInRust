@@ -2,15 +2,19 @@
 extern crate lazy_static;
 extern crate regex;
 
+use regex::Regex;
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use std::collections::{HashMap, HashSet, BTreeSet};
-use regex::Regex;
 
 fn main() {
     let input_path = "./input.txt";
-    let input_file = File::open(input_path).expect(&format!("Failed to open input file({})", input_path));
-    let input_list: Vec<Edge> = BufReader::new(input_file).lines().map(|l| Edge::new(&l.unwrap()).unwrap()).collect();
+    let input_file =
+        File::open(input_path).expect(&format!("Failed to open input file({})", input_path));
+    let input_list: Vec<Edge> = BufReader::new(input_file)
+        .lines()
+        .map(|l| Edge::new(&l.unwrap()).unwrap())
+        .collect();
     // println!("Input edges are: {:?}", input_list);
 
     // Construct the whole dependency graph
@@ -20,7 +24,7 @@ fn main() {
 
     // From start nodes(without in nodes), generate work sequence
     let work_seq = DepSolver::new(dep_graph).fold(String::new(), |mut res, step| {
-        res.push_str(&step); 
+        res.push_str(&step);
         res
     });
 
@@ -30,9 +34,9 @@ fn main() {
 type Node = String;
 
 #[derive(Debug)]
-struct Edge{
+struct Edge {
     from: Node,
-    to: Node
+    to: Node,
 }
 
 impl Edge {
@@ -45,9 +49,9 @@ impl Edge {
         match EDGE_PATTERN.captures(desc) {
             Some(caps) => Some(Edge {
                 from: caps.get(1).unwrap().as_str().to_string(),
-                to: caps.get(2).unwrap().as_str().to_string()
+                to: caps.get(2).unwrap().as_str().to_string(),
             }),
-            _ => None
+            _ => None,
         }
     }
 
@@ -63,14 +67,14 @@ impl Edge {
 #[derive(Debug)]
 struct InOutList {
     in_node_ids: HashSet<Node>,
-    out_node_ids: HashSet<Node>
+    out_node_ids: HashSet<Node>,
 }
 
 impl InOutList {
     pub fn new() -> InOutList {
         InOutList {
             in_node_ids: HashSet::new(),
-            out_node_ids: HashSet::new()
+            out_node_ids: HashSet::new(),
         }
     }
 
@@ -97,21 +101,27 @@ impl InOutList {
 
 #[derive(Debug)]
 struct Graph {
-    edge_map: HashMap<Node, InOutList>
+    edge_map: HashMap<Node, InOutList>,
 }
 
 impl Graph {
     pub fn new() -> Graph {
         Graph {
-            edge_map: HashMap::new()
+            edge_map: HashMap::new(),
         }
     }
 
     pub fn add_edge(&mut self, edge: &Edge) {
-        let mut entry = self.edge_map.entry(Node::from(edge.from_node())).or_insert(InOutList::new());
+        let mut entry = self
+            .edge_map
+            .entry(Node::from(edge.from_node()))
+            .or_insert(InOutList::new());
         entry.add_out_node(edge.to_node());
 
-        entry = self.edge_map.entry(Node::from(edge.to_node())).or_insert(InOutList::new());
+        entry = self
+            .edge_map
+            .entry(Node::from(edge.to_node()))
+            .or_insert(InOutList::new());
         entry.add_in_node(edge.from_node());
     }
 
@@ -123,7 +133,7 @@ impl Graph {
         self.edge_map.get(node).unwrap().in_nodes()
     }
 
-    pub fn out_nodes(& self, node: &Node) -> HashSet<Node> {
+    pub fn out_nodes(&self, node: &Node) -> HashSet<Node> {
         self.edge_map.get(node).unwrap().out_nodes()
     }
 }
@@ -131,18 +141,22 @@ impl Graph {
 struct DepSolver {
     dep_graph: Graph,
     candidates: BTreeSet<String>,
-    done_hist: HashSet<String>
+    done_hist: HashSet<String>,
 }
 
 impl DepSolver {
     pub fn new(graph: Graph) -> DepSolver {
-        let start_nodes = graph.nodes().iter().filter(|(_, io_list)| io_list.in_count() == 0).map(
-            |(id, _)| id.to_string()).collect();
+        let start_nodes = graph
+            .nodes()
+            .iter()
+            .filter(|(_, io_list)| io_list.in_count() == 0)
+            .map(|(id, _)| id.to_string())
+            .collect();
 
         DepSolver {
             dep_graph: graph,
             candidates: start_nodes,
-            done_hist: HashSet::new()
+            done_hist: HashSet::new(),
         }
     }
 }
@@ -154,7 +168,7 @@ impl Iterator for DepSolver {
 
         let done = match self.candidates.iter().next() {
             None => return None,
-            Some(cand) => cand.to_string()
+            Some(cand) => cand.to_string(),
         };
         self.candidates.remove(&done);
 
