@@ -11,12 +11,12 @@ fn main() {
     let input_path = "./input.txt";
     let input_file = File::open(input_path).expect(&format!("Failed to open input file({})", input_path));
     let input_list: Vec<Edge> = BufReader::new(input_file).lines().map(|l| Edge::new(&l.unwrap()).unwrap()).collect();
-    println!("Input edges are: {:?}", input_list);
+    // println!("Input edges are: {:?}", input_list);
 
     // Construct the whole dependency graph
     let mut dep_graph = Graph::new();
     input_list.iter().for_each(|e| dep_graph.add_edge(e));
-    println!("Dependence graph is: {:?}", dep_graph);
+    // println!("Dependence graph is: {:?}", dep_graph);
 
     // From start nodes(without in nodes), generate work sequence
     let work_seq = DepSolver::new(dep_graph).fold(String::new(), |mut res, step| {
@@ -150,7 +150,7 @@ impl DepSolver {
 impl Iterator for DepSolver {
     type Item = Node;
     fn next(&mut self) -> Option<Node> {
-        println!("Candidates: {:?}, done_hist: {:?}", self.candidates, self.done_hist);
+        // println!("Candidates: {:?}, done_hist: {:?}", self.candidates, self.done_hist);
 
         let done = match self.candidates.iter().next() {
             None => return None,
@@ -163,7 +163,7 @@ impl Iterator for DepSolver {
         for node in affect_nodes {
             if !self.done_hist.contains(&node) {
                 let need_nodes = self.dep_graph.in_nodes(&node);
-                println!("node {} need nodes: {:?}", node, need_nodes);
+                // println!("node {} need nodes: {:?}", node, need_nodes);
                 if need_nodes.is_subset(&self.done_hist) {
                     self.candidates.insert(node);
                 }
