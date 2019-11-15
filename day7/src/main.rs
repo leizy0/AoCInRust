@@ -90,12 +90,12 @@ impl InOutList {
         self.in_node_ids.len() as u32
     }
 
-    pub fn in_nodes(&self) -> HashSet<Node> {
-        self.in_node_ids.clone()
+    pub fn in_nodes(&self) -> &HashSet<Node> {
+        &self.in_node_ids
     }
 
-    pub fn out_nodes(&self) -> HashSet<Node> {
-        self.out_node_ids.clone()
+    pub fn out_nodes(&self) -> &HashSet<Node> {
+        &self.out_node_ids
     }
 }
 
@@ -129,11 +129,11 @@ impl Graph {
         &self.edge_map
     }
 
-    pub fn in_nodes(&self, node: &Node) -> HashSet<Node> {
+    pub fn in_nodes<'a>(&'a self, node: &Node) -> &'a HashSet<Node> {
         self.edge_map.get(node).unwrap().in_nodes()
     }
 
-    pub fn out_nodes(&self, node: &Node) -> HashSet<Node> {
+    pub fn out_nodes<'a>(&'a self, node: &Node) -> &'a HashSet<Node> {
         self.edge_map.get(node).unwrap().out_nodes()
     }
 }
@@ -175,11 +175,11 @@ impl Iterator for DepSolver {
         self.done_hist.insert(done.clone());
         let affect_nodes = self.dep_graph.out_nodes(&done);
         for node in affect_nodes {
-            if !self.done_hist.contains(&node) {
-                let need_nodes = self.dep_graph.in_nodes(&node);
+            if !self.done_hist.contains(node) {
+                let need_nodes = self.dep_graph.in_nodes(node);
                 // println!("node {} need nodes: {:?}", node, need_nodes);
                 if need_nodes.is_subset(&self.done_hist) {
-                    self.candidates.insert(node);
+                    self.candidates.insert(node.to_string());
                 }
             }
         }
