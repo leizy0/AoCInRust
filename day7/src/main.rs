@@ -6,6 +6,7 @@ use regex::Regex;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
+use std::cmp::Ordering;
 
 fn main() {
     let input_path = "./input.txt";
@@ -24,14 +25,55 @@ fn main() {
 
     // From start nodes(without in nodes), generate work sequence
     let work_seq = DepSolver::new(dep_graph).fold(String::new(), |mut res, step| {
-        res.push_str(&step);
+        res.push_str(step.id());
         res
     });
 
     println!("Given the dependences, final work flow is {}", work_seq);
 }
 
-type Node = String;
+#[derive(Debug, Clone, Hash)]
+struct Node {
+    id: String
+}
+
+impl Node {
+    pub fn new(idr: &str) -> Node {
+        Node {
+            id: idr.to_string()
+        }
+    }
+
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    pub fn time(&self) -> u32 {
+        debug_assert!(self.id.len() == 1);
+        let code = self.id.bytes().next().unwrap();
+        60 + (code - 65) as u32 // 'A' is 65
+    }
+}
+
+impl PartialEq for Node {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+
+impl Eq for Node {}
+
+impl PartialOrd for Node {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Node {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.id.cmp(&other.id)
+    }
+}
 
 #[derive(Debug)]
 struct Edge {
@@ -48,8 +90,8 @@ impl Edge {
 
         match EDGE_PATTERN.captures(desc) {
             Some(caps) => Some(Edge {
-                from: caps.get(1).unwrap().as_str().to_string(),
-                to: caps.get(2).unwrap().as_str().to_string(),
+                from: Node::new(caps.get(1).unwrap().as_str()),
+                to: Node::new(caps.get(2).unwrap().as_str()),
             }),
             _ => None,
         }
@@ -79,11 +121,11 @@ impl InOutList {
     }
 
     pub fn add_in_node(&mut self, node: &Node) {
-        self.in_node_ids.insert(node.to_string());
+        self.in_node_ids.insert(node.clone());
     }
 
     pub fn add_out_node(&mut self, node: &Node) {
-        self.out_node_ids.insert(node.to_string());
+        self.out_node_ids.insert(node.clone());
     }
 
     pub fn in_count(&self) -> u32 {
@@ -114,15 +156,15 @@ impl Graph {
     pub fn add_edge(&mut self, edge: &Edge) {
         let mut entry = self
             .edge_map
-            .entry(Node::from(edge.from_node()))
+            .entry(edge.from_node().clone())
             .or_insert(InOutList::new());
-        entry.add_out_node(edge.to_node());
+        entry.add_out_node(&edge.to_node());
 
         entry = self
             .edge_map
-            .entry(Node::from(edge.to_node()))
+            .entry(edge.to_node().clone())
             .or_insert(InOutList::new());
-        entry.add_in_node(edge.from_node());
+        entry.add_in_node(&edge.from_node());
     }
 
     pub fn nodes(&self) -> &HashMap<Node, InOutList> {
@@ -140,8 +182,8 @@ impl Graph {
 
 struct DepSolver {
     dep_graph: Graph,
-    candidates: BTreeSet<String>,
-    done_hist: HashSet<String>,
+    candidates: BTreeSet<Node>,
+    done_hist: HashSet<Node>,
 }
 
 impl DepSolver {
@@ -150,7 +192,7 @@ impl DepSolver {
             .nodes()
             .iter()
             .filter(|(_, io_list)| io_list.in_count() == 0)
-            .map(|(id, _)| id.to_string())
+            .map(|(n, _)| n.clone())
             .collect();
 
         DepSolver {
@@ -168,7 +210,7 @@ impl Iterator for DepSolver {
 
         let done = match self.candidates.iter().next() {
             None => return None,
-            Some(cand) => cand.to_string(),
+            Some(cand) => cand.clone(),
         };
         self.candidates.remove(&done);
 
@@ -179,7 +221,7 @@ impl Iterator for DepSolver {
                 let need_nodes = self.dep_graph.in_nodes(node);
                 // println!("node {} need nodes: {:?}", node, need_nodes);
                 if need_nodes.is_subset(&self.done_hist) {
-                    self.candidates.insert(node.to_string());
+                    self.candidates.insert(node.clone());
                 }
             }
         }
