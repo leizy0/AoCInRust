@@ -16,14 +16,14 @@ fn main() {
         .collect();
 
     let root = Node::parse_tree(&input_list);
-    println!("Tree is {:?}", root);
+    // println!("Tree is {:?}", root);
     println!("Value of root node is {}", root.value());
 }
 
 #[derive(Debug)]
 struct Node {
     metas: Vec<u32>,
-    children: Option<Vec<Node>>
+    children: Option<Vec<Node>>,
 }
 
 impl Node {
@@ -47,7 +47,7 @@ impl Node {
             children.push(first_node);
             start_pos += end_pos;
         }
-        
+
         assert_eq!(start_pos, num_desc.len());
 
         children
@@ -60,11 +60,14 @@ impl Node {
         match chd_n {
             0 => {
                 let end_pos = 2 + (meta_n as usize);
-                (Node {
-                    metas: Vec::from(&num_desc[2..end_pos]),
-                    children: None
-                }, end_pos)
-            },
+                (
+                    Node {
+                        metas: Vec::from(&num_desc[2..end_pos]),
+                        children: None,
+                    },
+                    end_pos,
+                )
+            }
             n => {
                 let mut chd_list = Vec::new();
                 let mut start_pos = 2;
@@ -80,10 +83,13 @@ impl Node {
 
                 let end_pos = start_pos + (meta_n as usize);
 
-                (Node {
-                    metas: Vec::from(&num_desc[start_pos..end_pos]),
-                    children: Some(chd_list)
-                }, end_pos)
+                (
+                    Node {
+                        metas: Vec::from(&num_desc[start_pos..end_pos]),
+                        children: Some(chd_list),
+                    },
+                    end_pos,
+                )
             }
         }
     }
