@@ -3,10 +3,10 @@ extern crate lazy_static;
 extern crate regex;
 
 use regex::Regex;
+use std::cmp::Ordering;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use std::cmp::Ordering;
 
 fn main() {
     let input_path = "./input.txt";
@@ -24,23 +24,25 @@ fn main() {
     // println!("Dependence graph is: {:?}", dep_graph);
 
     // From start nodes(without in nodes), generate work sequence
-    let work_seq = DepSolver::new(dep_graph).fold(String::new(), |mut res, step| {
-        res.push_str(step.id());
-        res
+    const WORKER_N: u32 = 5;
+    let (total_time, work_seq) = WorkSimulator::new(dep_graph, WORKER_N).simulate();
+    let seq_str = work_seq.iter().fold(String::new(), |mut s, n| {
+        s.push_str(n.id());
+        s
     });
 
-    println!("Given the dependences, final work flow is {}", work_seq);
+    println!("Given the dependences and {} workers, it'll take {} seconds to finish, and the final work flow is {}", WORKER_N, total_time, seq_str);
 }
 
 #[derive(Debug, Clone, Hash)]
 struct Node {
-    id: String
+    id: String,
 }
 
 impl Node {
     pub fn new(idr: &str) -> Node {
         Node {
-            id: idr.to_string()
+            id: idr.to_string(),
         }
     }
 
@@ -51,7 +53,7 @@ impl Node {
     pub fn time(&self) -> u32 {
         debug_assert!(self.id.len() == 1);
         let code = self.id.bytes().next().unwrap();
-        60 + (code - 65) as u32 // 'A' is 65
+        61 + (code - 65) as u32 // 'A' is 65
     }
 }
 
@@ -73,6 +75,15 @@ impl Ord for Node {
     fn cmp(&self, other: &Self) -> Ordering {
         self.id.cmp(&other.id)
     }
+}
+
+#[test]
+fn test_node_time() {
+    let node_a = Node::new("A");
+    let node_z = Node::new("Z");
+
+    assert_eq!(node_a.time(), 61);
+    assert_eq!(node_z.time(), 86);
 }
 
 #[derive(Debug)]
@@ -180,14 +191,15 @@ impl Graph {
     }
 }
 
-struct DepSolver {
+struct WorkSimulator {
     dep_graph: Graph,
+    workers: Vec<Worker>,
     candidates: BTreeSet<Node>,
     done_hist: HashSet<Node>,
 }
 
-impl DepSolver {
-    pub fn new(graph: Graph) -> DepSolver {
+impl WorkSimulator {
+    pub fn new(graph: Graph, worker_n: u32) -> WorkSimulator {
         let start_nodes = graph
             .nodes()
             .iter()
@@ -195,37 +207,120 @@ impl DepSolver {
             .map(|(n, _)| n.clone())
             .collect();
 
-        DepSolver {
+        WorkSimulator {
             dep_graph: graph,
+            workers: vec![Worker::new(); worker_n as usize],
             candidates: start_nodes,
             done_hist: HashSet::new(),
         }
     }
-}
 
-impl Iterator for DepSolver {
-    type Item = Node;
-    fn next(&mut self) -> Option<Node> {
-        // println!("Candidates: {:?}, done_hist: {:?}", self.candidates, self.done_hist);
+    pub fn simulate(&mut self) -> (u32, Vec<Node>) {
+        // Iterate until canidates is empty
+        let mut pass_time = 0u32;
+        let mut work_seq = Vec::new();
+        while !self.candidates.is_empty() || self.workers.iter().any(|w| !w.is_idle()) {
+            // println!("Candidates: {:?}, done_hist: {:?}", self.candidates, self.done_hist);
 
-        let done = match self.candidates.iter().next() {
-            None => return None,
-            Some(cand) => cand.clone(),
-        };
-        self.candidates.remove(&done);
-
-        self.done_hist.insert(done.clone());
-        let affect_nodes = self.dep_graph.out_nodes(&done);
-        for node in affect_nodes {
-            if !self.done_hist.contains(node) {
-                let need_nodes = self.dep_graph.in_nodes(node);
-                // println!("node {} need nodes: {:?}", node, need_nodes);
-                if need_nodes.is_subset(&self.done_hist) {
-                    self.candidates.insert(node.clone());
+            // Assign nodes to idle workers
+            for worker in &mut self.workers {
+                if worker.is_idle() {
+                    if let Some(next_node) = self.candidates.iter().next().cloned() {
+                        // println!("Assign node({:?}) to worker", next_node);
+                        self.candidates.remove(&next_node);
+                        worker.work_on(next_node);
+                    }
                 }
             }
+
+            // Sort the worker by left time, pass the least left time
+            let min_complete_time = self
+                .workers
+                .iter()
+                .filter(|w| !w.is_idle())
+                .min_by_key(|w| w.left_time())
+                .unwrap()
+                .left_time();
+            // println!("Pass time({})", min_complete_time);
+            for w in &mut self.workers {
+                if !w.is_idle() {
+                    if let Some(done) = w.sim_tick(min_complete_time) {
+                        // Iterate done node, add new node to candidates according to dependence graph
+                        self.done_hist.insert(done.clone());
+                        let affect_nodes = self.dep_graph.out_nodes(&done);
+                        for node in affect_nodes {
+                            if !self.done_hist.contains(node) {
+                                let need_nodes = self.dep_graph.in_nodes(node);
+                                // println!("node {:?} need nodes: {:?}", node, need_nodes);
+                                if need_nodes.is_subset(&self.done_hist) {
+                                    self.candidates.insert(node.clone());
+                                }
+                            }
+                        }
+
+                        work_seq.push(done);
+                    }
+                }
+            }
+            pass_time += min_complete_time;
         }
 
-        Some(done)
+        // From the end state of above loop, generate outputs
+        (pass_time, work_seq)
+    }
+}
+
+#[derive(Clone)]
+struct Worker {
+    working_node: Option<Node>,
+    left_time: u32,
+}
+
+impl Worker {
+    pub fn new() -> Worker {
+        Worker {
+            working_node: None,
+            left_time: 0,
+        }
+    }
+
+    pub fn is_idle(&self) -> bool {
+        self.working_node == None
+    }
+
+    pub fn left_time(&self) -> u32 {
+        if self.is_idle() {
+            0
+        } else {
+            self.left_time
+        }
+    }
+
+    pub fn work_on(&mut self, node: Node) {
+        if !self.is_idle() {
+            panic!(
+                "Working on node({:?}), can't start node({:?}),",
+                self.working_node, node
+            );
+        }
+
+        self.left_time = node.time();
+        self.working_node = Some(node);
+    }
+
+    pub fn sim_tick(&mut self, tick_n: u32) -> Option<Node> {
+        if self.is_idle() {
+            return None;
+        }
+
+        return if self.left_time <= tick_n {
+            let done_node = self.working_node.clone().unwrap();
+            self.working_node = None;
+            self.left_time = 0;
+            Some(done_node)
+        } else {
+            self.left_time -= tick_n;
+            None
+        };
     }
 }
