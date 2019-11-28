@@ -16,7 +16,8 @@ fn main() {
         .collect();
 
     let root = Node::parse_tree(&input_list);
-    println!("Sum of all metadata entries is {}", comp_meta_sum(&root));
+    println!("Tree is {:?}", root);
+    println!("Value of root node is {}", root.value());
 }
 
 #[derive(Debug)]
@@ -83,6 +84,24 @@ impl Node {
                     metas: Vec::from(&num_desc[start_pos..end_pos]),
                     children: Some(chd_list)
                 }, end_pos)
+            }
+        }
+    }
+
+    pub fn value(&self) -> u32 {
+        match self.children {
+            None => self.metas.iter().sum(),
+            Some(ref children) => {
+                let mut res = 0;
+                let valid_chd_ref_range = 1..=(children.len());
+                for meta_d in &self.metas {
+                    let ind = (*meta_d) as usize;
+                    if valid_chd_ref_range.contains(&ind) {
+                        res += children[ind - 1].value();
+                    }
+                }
+
+                res
             }
         }
     }
