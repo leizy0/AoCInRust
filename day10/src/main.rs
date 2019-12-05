@@ -12,8 +12,29 @@ fn main() {
     let input_file = File::open(input_path).expect(&format!("Failed to open input file({})", input_path));
     let input_list: Vec<Point> = BufReader::new(input_file).lines().map(|l| Point::new(&l.unwrap()).unwrap()).collect();
 
-    let init_range = comp_points_range(&input_list);
-    println!("There are {} points in input, with range({} x {})", input_list.len(), init_range.0, init_range.1);
+    let len_limit = input_list.len() as u32;
+    let mut sim_tick_n = 0;
+    let mut simulator = StarMoveSimulator::new(input_list);
+    loop {
+        simulator.sim_tick(1);
+        sim_tick_n += 1;
+        let range = simulator.range();
+        if range.0 < len_limit && range.1 < len_limit {
+            println!("After {} ticks, whole range({} x {}) is smaller than limit({} x {})", sim_tick_n, range.0, range.1, len_limit, len_limit);
+            break;
+        }
+    }
+
+    loop {
+        simulator.sim_tick(1);
+        sim_tick_n += 1;
+        let range = simulator.range();
+        if range.0 > len_limit && range.1 > len_limit {
+            println!("After {} ticks, whole range({} x {}) is  bigger than limit({} x {}) again", sim_tick_n, range.0, range.1, len_limit, len_limit);
+            break;
+        }
+    }
+    
 }
 
 struct Point {
@@ -38,6 +59,29 @@ impl Point {
                 vy: matches.get(4).unwrap().as_str().parse().unwrap(),
             }
         })
+    }
+}
+
+struct StarMoveSimulator {
+    stars: Vec<Point>,
+}
+
+impl StarMoveSimulator {
+    pub fn new(point_list: Vec<Point>) -> StarMoveSimulator {
+        StarMoveSimulator {
+            stars: point_list,
+        }
+    }
+
+    pub fn sim_tick(&mut self, tick_n: u32) {
+        for star in &mut self.stars {
+            star.x += star.vx * (tick_n as i32);
+            star.y += star.vy * (tick_n as i32);
+        }
+    }
+
+    pub fn range(&self) -> (u32, u32) {
+        comp_points_range(&self.stars)
     }
 }
 
