@@ -2,41 +2,42 @@
 #[macro_use]
 extern crate lazy_static;
 extern crate regex;
+extern crate image;
 
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use regex::Regex;
+use image::{GrayImage, Luma};
 
 fn main() {
     let input_path = "input.txt";
     let input_file = File::open(input_path).expect(&format!("Failed to open input file({})", input_path));
     let input_list: Vec<Point> = BufReader::new(input_file).lines().map(|l| Point::new(&l.unwrap()).unwrap()).collect();
 
-    let len_limit = input_list.len() as u32;
-    let mut sim_tick_n = 0;
     let mut simulator = StarMoveSimulator::new(input_list);
-    loop {
-        simulator.sim_tick(1);
-        sim_tick_n += 1;
-        let range = simulator.range();
-        if range.0 < len_limit && range.1 < len_limit {
-            println!("After {} ticks, whole range({} x {}) is smaller than limit({} x {})", sim_tick_n, range.0, range.1, len_limit, len_limit);
-            break;
-        }
-    }
 
-    loop {
-        simulator.sim_tick(1);
-        sim_tick_n += 1;
+    const START_TICK: u32 = 9982;
+    const END_TICK: u32 = 10046u32;
+    simulator.sim_tick(START_TICK);
+    for i in START_TICK..=END_TICK {
         let range = simulator.range();
-        if range.0 > len_limit && range.1 > len_limit {
-            println!("After {} ticks, whole range({} x {}) is  bigger than limit({} x {}) again", sim_tick_n, range.0, range.1, len_limit, len_limit);
-            break;
+        let mut image = GrayImage::from_pixel(range.0, range.1, Luma([0]));
+        let (bias_x, bias_y) = simulator.bound_min().unwrap();
+
+        for star in simulator.star_iter() {
+            let indx = (star.x - bias_x) as u32;
+            let indy = (star.y - bias_y) as u32;
+            *image.get_pixel_mut(indx, indy) = Luma([255u8]);
         }
+
+        let file_path = format!("images/pic_{}.png", i);
+        let message = format!("Failed to save image({})", file_path);
+        image.save(file_path).expect(&message);
+        simulator.sim_tick(1);
     }
-    
 }
 
+#[derive(Copy, Clone)]
 struct Point {
     x: i32,
     y: i32,
@@ -82,6 +83,30 @@ impl StarMoveSimulator {
 
     pub fn range(&self) -> (u32, u32) {
         comp_points_range(&self.stars)
+    }
+
+    pub fn bound_min(&self) -> Option<(i32, i32)> {
+        if self.stars.is_empty() {
+            return None
+        }
+
+        let mut min_x = self.stars[0].x;
+        let mut min_y = self.stars[0].y;
+        for star in &self.stars {
+            if star.x < min_x {
+                min_x = star.x;
+            }
+
+            if star.y < min_y {
+                min_y = star.y;
+            }
+        }
+
+        Some((min_x, min_y))
+    }
+
+    pub fn star_iter(&self) -> &[Point] {
+        &self.stars
     }
 }
 
