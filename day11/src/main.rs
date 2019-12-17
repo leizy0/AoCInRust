@@ -1,3 +1,5 @@
+use std::time::{Duration, Instant};
+
 const INPUT: u32 = 7803;
 const GRID_BEGIN: u32 = 1;
 const GRID_END: u32 = 300;
@@ -6,13 +8,28 @@ const GRID_COLUMN_N: u32 = GRID_END - GRID_BEGIN + 1;
 
 fn main() {
     let fuel_grid = FuelGrid::new(GRID_ROW_N, GRID_COLUMN_N, INPUT);
-    let (max_cell_x, max_cell_y, max_cell_level) = fuel_grid.max_cell(3, 3);
+
+    let start_time = Instant::now();
+    let (max_cell_x, max_cell_y, max_cell_size, max_cell_level) = (GRID_BEGIN..=GRID_END)
+        .map(|s| {
+            println!(
+                "{}: compute cell size {}",
+                start_time.elapsed().as_secs(),
+                s
+            );
+            let (max_cell_x, max_cell_y, max_cell_level) = fuel_grid.max_cell(s, s);
+            (max_cell_x, max_cell_y, s, max_cell_level)
+        })
+        .max_by_key(|(_x, _y, _s, l)| l.clone())
+        .unwrap();
+
     println!(
-        "Max 3x3 cell in {} x {} grid starts at ({}, {}), with a total power of {}",
+        "Max square cell in {} x {} grid starts at ({}, {}), with size({}) and a total power of {}",
         GRID_COLUMN_N,
         GRID_ROW_N,
         max_cell_x + 1,
         max_cell_y + 1,
+        max_cell_size,
         max_cell_level
     );
 }
