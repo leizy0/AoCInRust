@@ -25,25 +25,27 @@ fn main() {
         });
     let mut simulator = PlantSimulator::new(&input_lines[0], grow_rules).unwrap();
 
-    let gen = 20;
+    let gen = 10000;
     let start_time = Instant::now();
     for i in 0..gen {
         println!("{}: generation[{}]", start_time.elapsed().as_secs(), i + 1);
         simulator.sim_one_gen();
-    }
 
-    let ind_offset = simulator.ind_offset();
-    let mut plant_ind_sum = 0i32;
-    for (i, status) in simulator.cur_pots().enumerate() {
-        if *status == PotStatus::Plant {
-            plant_ind_sum += i as i32 + ind_offset;
+        let ind_offset = simulator.ind_offset();
+        let mut plant_ind_sum = 0i32;
+        for (i, status) in simulator.cur_pots().enumerate() {
+            if *status == PotStatus::Plant {
+                plant_ind_sum += i as i32 + ind_offset;
+            }
         }
-    }
 
-    println!(
-        "After {} generation, sum of index of all planted pots is {}",
-        gen, plant_ind_sum
-    );
+        println!(
+            "After {} generation, sum of index of all planted pots is {}",
+            i + 1, plant_ind_sum
+        );
+
+        println!("Pots: [{}] @{}", simulator.pots_str(), simulator.ind_offset())
+    }
 }
 
 #[derive(Copy, Clone, Hash, PartialEq, Debug)]
@@ -183,6 +185,18 @@ impl PlantSimulator {
 
     pub fn ind_offset(&self) -> i32 {
         self.first_ind
+    }
+
+    pub fn pots_str(&self) -> String {
+        let mut res = String::new();
+        for status in &self.pots {
+            res.push(match status {
+                PotStatus::Plant => '1',
+                PotStatus::Empty => '0',
+            })
+        }
+
+        res
     }
 
     fn pot_status(&self, ind: i32) -> PotStatus {
