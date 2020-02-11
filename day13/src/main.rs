@@ -117,6 +117,7 @@ impl Turn {
 }
 
 struct Cart {
+    last_pos: Coordinate,
     pos: Coordinate,
     dir: Direction,
     cur_turn: Turn,
@@ -125,6 +126,7 @@ struct Cart {
 impl Cart {
     pub fn new(coord: Coordinate, desc: char) -> Self {
         Cart {
+            last_pos: coord,
             pos: coord,
             dir: match desc {
                 '^' => Direction::North,
@@ -141,6 +143,10 @@ impl Cart {
         self.pos
     }
 
+    pub fn last_coord(&self) -> Coordinate {
+        self.last_pos
+    }
+
     pub fn go_ahead(&mut self, track: Track) {
         self.dir = match track {
             Track::Empty => panic!("Cart({:?}) is derailed!"),
@@ -151,7 +157,24 @@ impl Cart {
         };
 
         let (x_offset, y_offset) = self.dir.coord_offset();
+        self.last_pos = self.pos;
         self.pos.shift(x_offset, y_offset);
+    }
+
+    fn collide_with(&self, other: &Cart) -> bool {
+        // Two situation
+        // First, two cart have the same current position
+        if self.pos == other.pos {
+            return true;
+        }
+
+        // Second, this cart's last position is position of other,
+        // and the last positon of other is this cart's current posiiton
+        if self.pos == other.last_pos && self.last_pos == other.pos {
+            return true;
+        }
+
+        false
     }
 
     fn turn(&mut self) -> Turn {
@@ -481,7 +504,7 @@ impl CTSimulator {
     }
 
     pub fn sim_tick(&mut self) -> CTSimResult {
-        self.cart_list.sort_unstable_by_key(|c| c.coord());
+        self.cart_list.sort_unstable_by_key(|c| c.last_coord());
         self.check_sorted_collision()?;
 
         for cart in &mut self.cart_list {
@@ -526,11 +549,10 @@ impl CTSimulator {
         let cart_n = self.cart_list.len();
 
         for i in 0..(cart_n - 1) {
-            let pos = self.cart_list[i].coord();
-            if pos == self.cart_list[i + 1].coord() {
+            if self.cart_list[i].collide_with(&self.cart_list[i + 1]) {
                 return Err(CTSimError {
                     err_type: CTSimErrorType::Collision,
-                    pos: pos,
+                    pos: self.cart_list[i].coord(),
                 });
             }
         }
