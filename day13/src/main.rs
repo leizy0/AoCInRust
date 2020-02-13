@@ -1,6 +1,7 @@
 use std::fmt;
 use std::fs;
 use std::io::{self, BufRead, Write};
+use std::cmp::{max, min};
 
 fn main() {
     let input_path = "input.txt";
@@ -12,16 +13,8 @@ fn main() {
         .collect();
 
     let mut simulator = CTSimulator::new(input_lines);
-    loop {
-        if let Err(ctse) = simulator.sim_tick() {
-            println!(
-                "Carts collide at pos({}), after {} ticks",
-                ctse.pos(),
-                simulator.elapsed()
-            );
-            break;
-        }
-    }
+    let last_cart_coord = simulator.sim_to_last_cart();
+    println!("If erase collided cart, after {} ticks, the last cart is at({})", simulator.elapsed(), last_cart_coord);
 }
 
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Debug)]
@@ -186,6 +179,15 @@ impl Cart {
         };
 
         res_turn
+    }
+
+    fn ascii_desc(&self) -> u8 {
+        match self.dir {
+            Direction::North => b'^',
+            Direction::South => b'v',
+            Direction::West => b'<',
+            Direction::East => b'>',
+        }
     }
 }
 
@@ -516,6 +518,27 @@ impl CTSimulator {
         Ok(())
     }
 
+    pub fn sim_to_last_cart(&mut self) -> Coordinate {
+        loop {
+            self.cart_list.sort_unstable_by_key(|c| c.coord());
+
+            let mut ind = 0;
+            while ind < self.cart_list.len() {
+                let cart = &mut self.cart_list[ind];
+                cart.go_ahead(self.map.at(cart.coord()));
+                ind = self.check_and_erase_collision(ind);
+            }
+
+            match self.cart_list.len() {
+                1 => return self.cart_list[0].coord(),
+                0 => panic!("Zero cart left, when erase all collided carts"),
+                _ => (),
+            }
+
+            self.tick_n += 1;
+        }
+    }
+
     pub fn elapsed(&self) -> u32 {
         self.tick_n
     }
@@ -538,6 +561,14 @@ impl CTSimulator {
                     Track::DownCurve => b'\\',
                 })
                 .collect();
+            
+            // Replace cart position with cart's ascii description
+            for cart in &self.cart_list {
+                let coord = cart.coord();
+                if coord.y == i {
+                    line[coord.x as usize] = cart.ascii_desc();
+                }
+            }
             line.push(b'\n');
 
             writer.write(line.as_slice())?;
@@ -558,5 +589,34 @@ impl CTSimulator {
         }
 
         Ok(())
+    }
+    
+    fn check_and_erase_collision(&mut self, ind: usize) -> usize {
+        let check_cart = &self.cart_list[ind];
+        let mut collide_partner: Option<usize> = None;
+        for (i, cart) in self.cart_list.iter().enumerate() {
+            if ind != i && cart.coord() == check_cart.coord() {
+                collide_partner = Some(i);
+                break;
+            }
+        }
+
+        return if let Some(collided_ind) = collide_partner {
+            if collided_ind > ind {
+                // Collide with latter cart, next cart index still is ind, because of removal of cart @ ind
+                self.cart_list.remove(collided_ind);
+                self.cart_list.remove(ind);
+                ind
+            } else {
+                // Collide with former cart, next cart index is ind - 1,
+                // because the removed two carts both have something with this
+                self.cart_list.remove(ind);
+                self.cart_list.remove(collided_ind);
+                ind - 1
+            }
+        } else {
+            // Not collide, just the next index
+            ind + 1
+        }
     }
 }
