@@ -504,11 +504,12 @@ impl CTSimulator {
     }
 
     pub fn sim_tick(&mut self) -> CTSimResult {
-        self.cart_list.sort_unstable_by_key(|c| c.last_coord());
-        self.check_sorted_collision()?;
+        self.cart_list.sort_unstable_by_key(|c| c.coord());
 
-        for cart in &mut self.cart_list {
+        for ind in 0..(self.cart_list.len()) {
+            let cart = &mut self.cart_list[ind];
             cart.go_ahead(self.map.at(cart.coord()));
+            self.check_cart_collision(ind)?;
         }
 
         self.tick_n += 1;
@@ -545,17 +546,14 @@ impl CTSimulator {
         Ok(())
     }
 
-    fn check_sorted_collision(&self) -> CTSimResult {
-        let cart_n = self.cart_list.len();
-
-        for i in 0..(cart_n - 1) {
-            for j in (i + 1)..cart_n {
-                if self.cart_list[i].collide_with(&self.cart_list[j]) {
-                    return Err(CTSimError {
-                        err_type: CTSimErrorType::Collision,
-                        pos: self.cart_list[i].coord(),
-                    });
-                }
+    fn check_cart_collision(&self, ind: usize) -> CTSimResult {
+        let check_cart = &self.cart_list[ind];
+        for (i, cart) in self.cart_list.iter().enumerate() {
+            if ind != i && cart.coord() == check_cart.coord() {
+                return Err(CTSimError {
+                    err_type: CTSimErrorType::Collision,
+                    pos: check_cart.coord(),
+                });
             }
         }
 
