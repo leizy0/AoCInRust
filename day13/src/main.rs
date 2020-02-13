@@ -549,11 +549,13 @@ impl CTSimulator {
         let cart_n = self.cart_list.len();
 
         for i in 0..(cart_n - 1) {
-            if self.cart_list[i].collide_with(&self.cart_list[i + 1]) {
-                return Err(CTSimError {
-                    err_type: CTSimErrorType::Collision,
-                    pos: self.cart_list[i].coord(),
-                });
+            for j in (i + 1)..cart_n {
+                if self.cart_list[i].collide_with(&self.cart_list[j]) {
+                    return Err(CTSimError {
+                        err_type: CTSimErrorType::Collision,
+                        pos: self.cart_list[i].coord(),
+                    });
+                }
             }
         }
 
