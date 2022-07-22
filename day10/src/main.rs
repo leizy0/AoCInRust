@@ -1,18 +1,22 @@
-
 #[macro_use]
 extern crate lazy_static;
-extern crate regex;
 extern crate image;
+extern crate regex;
 
-use std::fs::File;
-use std::io::{BufRead, BufReader};
-use regex::Regex;
 use image::{GrayImage, Luma};
+use regex::Regex;
+use std::fs::{self, File};
+use std::io::{BufRead, BufReader};
+use std::path::Path;
 
 fn main() {
     let input_path = "input.txt";
-    let input_file = File::open(input_path).expect(&format!("Failed to open input file({})", input_path));
-    let input_list: Vec<Point> = BufReader::new(input_file).lines().map(|l| Point::new(&l.unwrap()).unwrap()).collect();
+    let input_file =
+        File::open(input_path).expect(&format!("Failed to open input file({})", input_path));
+    let input_list: Vec<Point> = BufReader::new(input_file)
+        .lines()
+        .map(|l| Point::new(&l.unwrap()).unwrap())
+        .collect();
 
     let mut simulator = StarMoveSimulator::new(input_list);
 
@@ -30,8 +34,16 @@ fn main() {
             *image.get_pixel_mut(indx, indy) = Luma([255u8]);
         }
 
-        let file_path = format!("images/pic_{}.png", i);
-        let message = format!("Failed to save image({})", file_path);
+        let output_dir = Path::new("images");
+        if !output_dir.exists() {
+            fs::create_dir_all(output_dir).expect(&format!(
+                "Failed to create output directories({})",
+                output_dir.display()
+            ));
+        }
+        let file_name = format!("pic_{}.png", i);
+        let file_path = output_dir.join(file_name);
+        let message = format!("Failed to save image({})", file_path.display());
         image.save(file_path).expect(&message);
         simulator.sim_tick(1);
     }
@@ -42,7 +54,7 @@ struct Point {
     x: i32,
     y: i32,
     vx: i32,
-    vy:i32,
+    vy: i32,
 }
 
 impl Point {
@@ -52,13 +64,11 @@ impl Point {
             static ref POINT_DESC_PATTERN: Regex = Regex::new(r"position=< *(-?\d+), *(-?\d+)> velocity=< *(-?\d+), *(-?\d+)>").unwrap();
         }
 
-        POINT_DESC_PATTERN.captures(desc).map(|matches| {
-            Point {
-                x: matches.get(1).unwrap().as_str().parse().unwrap(),
-                y: matches.get(2).unwrap().as_str().parse().unwrap(),
-                vx: matches.get(3).unwrap().as_str().parse().unwrap(),
-                vy: matches.get(4).unwrap().as_str().parse().unwrap(),
-            }
+        POINT_DESC_PATTERN.captures(desc).map(|matches| Point {
+            x: matches.get(1).unwrap().as_str().parse().unwrap(),
+            y: matches.get(2).unwrap().as_str().parse().unwrap(),
+            vx: matches.get(3).unwrap().as_str().parse().unwrap(),
+            vy: matches.get(4).unwrap().as_str().parse().unwrap(),
         })
     }
 }
@@ -69,9 +79,7 @@ struct StarMoveSimulator {
 
 impl StarMoveSimulator {
     pub fn new(point_list: Vec<Point>) -> StarMoveSimulator {
-        StarMoveSimulator {
-            stars: point_list,
-        }
+        StarMoveSimulator { stars: point_list }
     }
 
     pub fn sim_tick(&mut self, tick_n: u32) {
@@ -87,7 +95,7 @@ impl StarMoveSimulator {
 
     pub fn bound_min(&self) -> Option<(i32, i32)> {
         if self.stars.is_empty() {
-            return None
+            return None;
         }
 
         let mut min_x = self.stars[0].x;
