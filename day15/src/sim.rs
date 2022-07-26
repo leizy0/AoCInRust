@@ -1,4 +1,4 @@
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::fmt::Display;
 use std::fs::File;
 use std::io::{self, BufRead, BufReader};
@@ -20,6 +20,7 @@ impl BGElem {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct Map {
     bg: Vec<BGElem>,
     row_count: usize,
@@ -52,7 +53,7 @@ impl Map {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum UnitRace {
     Goblin,
     Elf,
@@ -169,6 +170,10 @@ impl Unit {
 
     pub fn elf(position: Position) -> Unit {
         Self::new(position, UnitRace::Elf)
+    }
+
+    pub fn race(&self) -> UnitRace {
+        self.race
     }
 
     pub fn health(&self) -> i32 {
@@ -384,7 +389,7 @@ impl ObstacleMap {
 }
 
 pub struct SimResult {
-    pub winner: Option<UnitRace>,
+    pub winner: UnitRace,
     pub round_count: u32,
     pub units: Vec<Unit>,
 }
@@ -529,10 +534,17 @@ pub enum ActionPhase {
     Attack,
 }
 
+#[derive(Debug, Clone)]
+pub enum Cheat {
+    SetElfAttack { attack: i32 },
+}
+
+#[derive(Debug, Clone)]
 pub struct Simulator {
     map: Map,
     units: Vec<Unit>,
     living_unit_ids: Vec<usize>,
+    cheats: Vec<Cheat>,
 }
 
 impl Simulator {
@@ -541,10 +553,23 @@ impl Simulator {
             map,
             living_unit_ids: (0..units.len()).collect::<Vec<_>>(),
             units,
+            cheats: Vec::new(),
         }
     }
 
-    pub fn simulate(mut self) -> Result<SimResult, Error> {
+    pub fn add_cheat(&mut self, cheat: Cheat) {
+        self.cheats.push(cheat);
+    }
+
+    pub fn simulate(self) -> Result<SimResult, Error> {
+        self.simulate_with_cond(one_race_all_dead)
+    }
+
+    pub fn simulate_with_cond<F: Fn(&[Unit]) -> Option<UnitRace>>(
+        mut self,
+        end_cond: F,
+    ) -> Result<SimResult, Error> {
+        self.apply_cheats();
         let mut round_ind = 1u32;
         loop {
             println!("Round#{}", round_ind);
@@ -568,13 +593,7 @@ impl Simulator {
                 }
 
                 let is_last = ind == left_unit_count - 1;
-
-                if self.is_end() {
-                    let winner = if self.units.is_empty() {
-                        None
-                    } else {
-                        Some(self.units[0].race)
-                    };
+                if let Some(winner) = end_cond(&self.units) {
                     return Ok(SimResult {
                         winner,
                         round_count: if is_last { round_ind } else { round_ind - 1 },
@@ -585,6 +604,19 @@ impl Simulator {
 
             round_ind += 1;
             println!();
+        }
+    }
+
+    fn apply_cheats(&mut self) {
+        for cheat in &self.cheats {
+            match cheat {
+                Cheat::SetElfAttack { attack } => {
+                    self.units
+                        .iter_mut()
+                        .filter(|u| u.race() == UnitRace::Elf)
+                        .for_each(|u| u.attack = *attack);
+                }
+            }
         }
     }
 
@@ -648,15 +680,6 @@ impl Simulator {
         Ok(())
     }
 
-    fn is_end(&self) -> bool {
-        self.living_unit_ids.is_empty()
-            || self
-                .living_unit_ids
-                .iter()
-                .map(|&id| self.units[id].race)
-                .all(|r| r == self.units[self.living_unit_ids[0]].race)
-    }
-
     fn log_map(&self) {
         let row_count = self.map.row_count;
         let col_count = self.map.col_count;
@@ -704,4 +727,23 @@ impl Simulator {
             }
         }
     }
+}
+
+fn one_race_all_dead(units: &[Unit]) -> Option<UnitRace> {
+    let mut race_map = HashMap::new();
+    for unit in units {
+        let race_entry = race_map.entry(unit.race).or_insert(Vec::new());
+        race_entry.push(unit);
+    }
+
+    for (race, units) in race_map {
+        if units.into_iter().all(|u| u.is_dead()) {
+            return Some(match race {
+                UnitRace::Elf => UnitRace::Goblin,
+                UnitRace::Goblin => UnitRace::Elf,
+            });
+        }
+    }
+
+    None
 }
