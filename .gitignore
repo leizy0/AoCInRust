@@ -11,3 +11,6 @@ Cargo.lock
 
 # Ignore vs code settings
 .vscode/
+
+# Ignore test outputs
+*.log
