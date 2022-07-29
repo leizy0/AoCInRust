@@ -1,4 +1,4 @@
-use std::{io::{self, BufReader, BufRead}, fs::File};
+use std::{io::{self, BufReader, BufRead}, fs::File, collections::{HashSet, HashMap}, fmt::Display};
 
 use once_cell::sync::Lazy;
 use regex::Regex;
@@ -6,11 +6,27 @@ use regex::Regex;
 #[derive(Debug)]
 pub enum Error {
     IOError(io::Error),
-    SampleFormatError(String),
-    RegisterGroupFormatError(String),
+    SampleParseError(String),
+    RegisterGroupParseError(String),
     InstructionFormatError(String),
     InvalidOpCode(usize),
     InvalidRegisterIndex(usize),
+    OpCodeNotfound(usize),
+}
+
+impl Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Error::IOError(ioe) => write!(f, "IO Error({})", ioe),
+            Error::SampleParseError(s) => write!(f, "Failed to parse sample text({})", s),
+            Error::RegisterGroupParseError(s) => write!(f, "Failed to parse register group text({})", s),
+            Error::InstructionFormatError(s) => write!(f, "Failed to parse instrction text({})", s),
+            Error::InvalidOpCode(op_code) => write!(f, "Invalid operation code({})", op_code),
+            Error::InvalidRegisterIndex(index) => write!(f, "Invalid register index({})", index),
+            Error::OpCodeNotfound(op_code) => write!(f, "Can't find operation code({}) in map", op_code),
+            
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -25,7 +41,7 @@ impl TryFrom<&str> for RegisterGroup {
         static REGISTER_GROUP_PATTERN: Lazy<Regex> = Lazy::new(|| Regex::new(r"\s*\[(\d+), (\d+), (\d+), (\d+)\]\s*").unwrap());
 
         let caps = REGISTER_GROUP_PATTERN.captures(value)
-            .ok_or(Error::RegisterGroupFormatError(value.to_string()))?;
+            .ok_or(Error::RegisterGroupParseError(value.to_string()))?;
         Ok(RegisterGroup {
             regs: [
                 caps[1].parse::<usize>().unwrap(),
@@ -34,6 +50,12 @@ impl TryFrom<&str> for RegisterGroup {
                 caps[4].parse::<usize>().unwrap(),
             ]
         })
+    }
+}
+
+impl Display for RegisterGroup {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self.regs)
     }
 }
 
@@ -61,7 +83,7 @@ impl RegisterGroup {
 
 type Oprands = [usize; 3];
 
-struct Instruction {
+pub struct Instruction {
     op_code: usize,
     oprands: Oprands,
 }
@@ -91,6 +113,12 @@ impl TryFrom<&str> for Instruction {
     }
 }
 
+impl Display for Instruction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "opcode: {}, oprands: {:?}", self.op_code, self.oprands)
+    }
+}
+
 pub struct ExeSample {
     before: RegisterGroup,
     after:RegisterGroup,
@@ -103,25 +131,23 @@ impl ExeSample {
         static SAMPLE_AFTER_PATTERN: Lazy<Regex> = Lazy::new(|| Regex::new(r"After:(.+)").unwrap());
 
         let before_caps = SAMPLE_BEFORE_PATTERN.captures(before)
-            .ok_or(Error::SampleFormatError(before.to_string()))?;
+            .ok_or(Error::SampleParseError(before.to_string()))?;
         let before = RegisterGroup::try_from(&before_caps[1])?;
         let after_caps = SAMPLE_AFTER_PATTERN.captures(after)
-            .ok_or(Error::SampleFormatError(after.to_string()))?;
+            .ok_or(Error::SampleParseError(after.to_string()))?;
         let after = RegisterGroup::try_from(&after_caps[1])?;
 
         let inst = Instruction::try_from(inst)?;
         Ok(ExeSample{ before, after, inst })
     }
+
+    pub fn op_code(&self) -> usize {
+        self.inst.op_code
+    }
 }
 
 pub trait Operation: Sync + Send {
     fn execute(&self, oprands: &Oprands, regs: &mut RegisterGroup) -> Result<(), Error>;
-}
-
-impl Operation for Box<dyn Operation> {
-    fn execute(&self, oprands: &Oprands, regs: &mut RegisterGroup) -> Result<(), Error> {
-        self.as_ref().execute(oprands, regs)
-    }
 }
 
 pub fn load_samples(input_path: &str) -> Result<Vec<ExeSample>, Error> {
@@ -139,6 +165,16 @@ pub fn load_samples(input_path: &str) -> Result<Vec<ExeSample>, Error> {
     }
 
     Ok(samples)
+}
+
+pub fn load_insts(input_path: &str) -> Result<Vec<Instruction>, Error> {
+    let input_file = File::open(input_path).map_err(Error::IOError)?;
+    let reader = BufReader::new(input_file);
+    reader.lines()
+        .filter(|s| s.is_err() || !s.as_ref().unwrap().is_empty())
+        .map(|se| se.map_err(Error::IOError)
+            .and_then(|s| Instruction::try_from(s.as_str())))
+        .collect::<Result<Vec<_>, _>>()
 }
 
 #[derive(Clone)]
@@ -293,7 +329,7 @@ impl Operation for EqRR {
     }
 }
 
-struct Executor {
+pub struct Executor {
     regs: RegisterGroup,
 }
 
@@ -317,22 +353,28 @@ impl Executor {
     pub fn execute(&mut self, op: &dyn Operation, oprands: &Oprands) -> Result<(), Error> {
         op.execute(oprands, &mut self.regs)
     }
+
+    pub fn execute_with_map(&mut self, inst: &Instruction, op_code_map: &HashMap<usize, usize>) -> Result<(), Error> {
+        let op_ind = op_code_map.get(&inst.op_code).ok_or(Error::OpCodeNotfound(inst.op_code))?;
+        OPERATIONS[*op_ind].execute(&inst.oprands, self.regs_mut())
+    }
 }
 
-pub fn guess_insts(sample: &ExeSample) -> Vec<&Box<dyn Operation>> {
-    static OPERATIONS: Lazy<Vec<Box<dyn Operation>>> = Lazy::new(|| vec![Box::new(AddR), Box::new(AddI), Box::new(MulR), Box::new(MulI),
+static OPERATIONS: Lazy<Vec<Box<dyn Operation>>> = Lazy::new(|| vec![Box::new(AddR), Box::new(AddI), Box::new(MulR), Box::new(MulI),
         Box::new(BanR), Box::new(BanI), Box::new(BorR), Box::new(BorI), Box::new(SetR), Box::new(SetI), Box::new(GtIR),
         Box::new(GtRI), Box::new(GtRR), Box::new(EqIR), Box::new(EqRI), Box::new(EqRR)]);
+
+pub fn guess_insts(sample: &ExeSample) -> HashSet<usize> {
     let mut executor = Executor::new();
-    let mut possibilities = Vec::new();
-    for op in OPERATIONS.iter() {
+    let mut possibilities = HashSet::new();
+    for (ind, op) in OPERATIONS.iter().enumerate() {
         *executor.regs_mut() = sample.before;
-        if executor.execute(op, &sample.inst.oprands).is_err() {
+        if executor.execute(op.as_ref(), &sample.inst.oprands).is_err() {
             continue;
         }
 
         if *executor.regs() == sample.after {
-            possibilities.push(op);
+            possibilities.insert(ind);
         }
     }
 
