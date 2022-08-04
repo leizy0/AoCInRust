@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use day16::inst::{self, Executor};
+use day16_19::inst::{self, Executor, Instruction};
 
 fn main() {
     let sample_input_path = "samples.txt";
@@ -25,8 +25,8 @@ fn main() {
     let inst_input_path = "instructions.txt";
     let insts = inst::load_insts(inst_input_path).expect(&format!("Failed to load instructions from input file({})", inst_input_path));
     let mut executor = Executor::new();
-    for inst in insts {
-        match executor.execute_with_map(&inst, &code_map) {
+    for inst in insts.iter().map(|inst| Instruction::new(code_map[&inst.op_code()], *inst.oprands())) {
+        match executor.execute_inst(&inst) {
             Err(e) => println!("Failed to execute instruction({}), get error({})", inst, e),
             _ => (),
         }
