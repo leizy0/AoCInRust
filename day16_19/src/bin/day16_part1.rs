@@ -1,4 +1,4 @@
-use day16::inst;
+use day16_19::inst;
 
 fn main() {
     let input_path = "samples.txt";
