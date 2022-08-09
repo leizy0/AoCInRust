@@ -15,6 +15,7 @@ pub enum Error {
     InvalidInstructionPointer(usize),
     IPMapParseError(String),
     OperationCodeParseError(String),
+    Break(usize),
 }
 
 impl Display for Error {
@@ -30,6 +31,7 @@ impl Display for Error {
             Error::InvalidInstructionPointer(ip) => write!(f, "Invalid instruction pointer({})", ip),
             Error::IPMapParseError(s) => write!(f, "Failed to parse ip map declaration from text({})", s),
             Error::OperationCodeParseError(s) => write!(f, "Failed to parse operation code from text({})", s),
+            Error::Break(ip) => write!(f, "Execution break at {}", ip),
         }
     }
 }
@@ -426,15 +428,16 @@ impl Operation for EqRR {
 
 pub struct Executor {
     regs: RegisterGroup,
+    break_point: Option<usize>,
 }
 
 impl Executor {
     pub fn new() -> Self {
-        Executor { regs: RegisterGroup::new() }
+        Executor { regs: RegisterGroup::new(), break_point: None }
     }
 
     pub fn with_regs(regs: &RegisterGroup) -> Self {
-        Executor { regs: *regs }
+        Executor { regs: *regs, break_point: None }
     }
 
     pub fn regs_mut(&mut self) -> &mut RegisterGroup {
@@ -452,6 +455,9 @@ impl Executor {
 
         let mut tick_ind: usize = 0;
         loop {
+            if Some(self.regs().ip()) == self.break_point {
+                return Err(Error::Break(self.regs().ip()));
+            }
             println!("Tick #{}: general registers: {}, ip: {}", tick_ind, self.regs(), self.regs().ip());
             let inst = program.insts.get(self.regs.ip()).ok_or(Error::InvalidInstructionPointer(self.regs.ip()))?;
             self.execute_inst(inst)?;
@@ -466,6 +472,10 @@ impl Executor {
 
     pub fn execute_inst(&mut self, inst: &Instruction) -> Result<(), Error> {
         OPERATIONS[inst.op_code].execute(&inst.oprands, self.regs_mut())
+    }
+
+    pub fn set_break_at(&mut self, b_ind: usize) {
+        self.break_point = Some(b_ind);
     }
 }
 
