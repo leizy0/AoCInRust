@@ -57,47 +57,33 @@ fn comp_intersect_mat(bots: &[Nanobot]) -> Vec<HashSet<usize>> {
 
 // Compute two two directly connected set with maximum node count
 fn comp_max_2_2_intersected_set(neighbor_mat: &Vec<HashSet<usize>>) -> Vec<usize> {
-    let mut min_count = 0;
-    let mut max_count = neighbor_mat.len();
-    while min_count <= max_count {
-        let mut init_mat = neighbor_mat
-            .iter()
-            .enumerate()
-            .map(|(ind, l)| (ind, l.clone()))
-            .collect::<HashMap<_, _>>();
+    let mut init_mat = neighbor_mat
+        .iter()
+        .enumerate()
+        .map(|(ind, l)| (ind, l.clone()))
+        .collect::<HashMap<_, _>>();
 
-        let cur_count = (min_count + max_count) / 2;
-        println!("Try node count {} in range({}, {})", cur_count, min_count, max_count);
-        loop {
-            let del_ind = if let Some((ind, l)) = init_mat.iter().min_by_key(|&(_, l)| l.len()) {
-                if l.len() >= cur_count - 1 {
-                    break;
-                } else {
-                    *ind
-                }
-            } else {
+    loop {
+        let del_ind = if let Some((ind, l)) = init_mat.iter().min_by_key(|&(_, l)| l.len()) {
+            if l.len() >= init_mat.len() - 1 {
                 break;
-            };
-
-            init_mat.remove(&del_ind)
-                .unwrap()
-                .iter()
-                .for_each(|ind| {
-                    assert!(init_mat[ind].contains(&del_ind));
-                    init_mat.get_mut(ind).unwrap().remove(&del_ind);
-                });
-        }
-
-        if init_mat.len() > cur_count {
-            min_count = cur_count + 1;
-        } else if init_mat.len() == cur_count {
-            return init_mat.keys().copied().collect::<Vec<_>>();
+            } else {
+                *ind
+            }
         } else {
-            max_count = cur_count - 1;
-        }
+            break;
+        };
+
+        init_mat.remove(&del_ind)
+            .unwrap()
+            .iter()
+            .for_each(|ind| {
+                assert!(init_mat[ind].contains(&del_ind));
+                init_mat.get_mut(ind).unwrap().remove(&del_ind);
+            });
     }
 
-    panic!("Unreachable failure");
+    init_mat.keys().copied().collect::<Vec<_>>()
 }
 
 fn is_all_mutually_neighbor(node_ind_set: &[usize], neighbor_mat: &Vec<HashSet<usize>>) -> bool {
