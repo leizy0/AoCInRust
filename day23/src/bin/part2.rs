@@ -34,7 +34,7 @@ fn main() {
             .iter()
             .all(|ind| virt_bot.has_intersection(&nanobots[*ind]))
         {
-            max_dist = cur_dist - 1;
+            max_dist = cur_dist;
         } else {
             min_dist = cur_dist + 1;
         }
