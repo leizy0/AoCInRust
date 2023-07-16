@@ -8,11 +8,11 @@ fn main() {
     let min_mht_cross_point = wires[0]
         .cross(&wires[1])
         .into_iter()
-        .min_by_key(|p| p.point().mht_dist())
+        .min_by_key(|p| p.total_len())
         .expect("Two given wires don't have any cross point");
     println!(
-        "Two given wire have an cross point({:?}) which has the least manhattan distance({})",
+        "Two given wire have an cross point({:?}) which has the least total length({})",
         min_mht_cross_point,
-        min_mht_cross_point.point().mht_dist()
+        min_mht_cross_point.total_len()
     );
 }

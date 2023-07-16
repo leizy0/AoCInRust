@@ -2,7 +2,7 @@ use std::{
     cmp::{max, min},
     fs::File,
     io::{BufRead, BufReader},
-    ops::Range,
+    ops::{Range, RangeInclusive},
     path::Path,
     str::FromStr,
 };
@@ -25,61 +25,106 @@ impl Point {
     }
 }
 
-fn range_intersect(l_range: &Range<i32>, r_range: &Range<i32>) -> Vec<i32> {
-    (max(l_range.start, r_range.start)..min(l_range.end, r_range.end)).collect()
+#[derive(Debug)]
+pub struct CrossPoint {
+    p: Point,
+    total_length: u32,
 }
 
-fn cross_horz_vert_seg(horz_seg: &HorizontalSegment, vert_seg: &VerticalSegment) -> Option<Point> {
-    if vert_seg.y_range.contains(&horz_seg.y) && horz_seg.x_range.contains(&vert_seg.x) {
-        Some(Point {
-            x: vert_seg.x,
-            y: horz_seg.y,
-        })
+impl CrossPoint {
+    pub fn new(x: i32, y: i32, total_length: u32) -> CrossPoint {
+        CrossPoint {
+            p: Point::new(x, y),
+            total_length,
+        }
+    }
+
+    pub fn point(&self) -> &Point {
+        &self.p
+    }
+
+    pub fn total_len(&self) -> u32 {
+        self.total_length
+    }
+}
+
+fn range_intersect(l_range: &RangeInclusive<i32>, r_range: &RangeInclusive<i32>) -> Vec<i32> {
+    (*max(l_range.start(), r_range.start())..=*min(l_range.end(), r_range.end())).collect()
+}
+
+fn cross_horz_vert_seg(
+    horz_seg: &HorizontalSegment,
+    vert_seg: &VerticalSegment,
+) -> Option<CrossPoint> {
+    if vert_seg.y_range().contains(&horz_seg.y) && horz_seg.x_range().contains(&vert_seg.x) {
+        let horz_len = horz_seg.start_length + vert_seg.x.abs_diff(horz_seg.x_begin) + 1;
+        let vert_len = vert_seg.start_length + horz_seg.y.abs_diff(vert_seg.y_begin) + 1;
+        Some(CrossPoint::new(vert_seg.x, horz_seg.y, horz_len + vert_len))
     } else {
         None
     }
 }
 
 struct HorizontalSegment {
-    x_range: Range<i32>,
+    x_begin: i32, // Inclusive
+    x_end: i32,   // Inclusive
     y: i32,
+    start_length: u32,
 }
 
 impl HorizontalSegment {
-    fn cross_horz_seg(&self, other: &HorizontalSegment) -> Vec<Point> {
+    fn x_range(&self) -> RangeInclusive<i32> {
+        min(self.x_begin, self.x_end)..=max(self.x_begin, self.x_end)
+    }
+
+    fn cross_horz_seg(&self, other: &HorizontalSegment) -> Vec<CrossPoint> {
         if self.y != other.y {
             Vec::new()
         } else {
-            range_intersect(&self.x_range, &other.x_range)
+            range_intersect(&self.x_range(), &other.x_range())
                 .iter()
-                .map(|&x| Point { x, y: self.y })
+                .map(|&x| {
+                    let length = self.start_length + x.abs_diff(self.x_begin) + 1;
+                    let other_length = other.start_length + x.abs_diff(other.x_begin) + 1;
+                    CrossPoint::new(x, self.y, length + other_length)
+                })
                 .collect()
         }
     }
 
-    fn cross_vert_seg(&self, vert_seg: &VerticalSegment) -> Option<Point> {
+    fn cross_vert_seg(&self, vert_seg: &VerticalSegment) -> Option<CrossPoint> {
         cross_horz_vert_seg(self, vert_seg)
     }
 }
 
 struct VerticalSegment {
     x: i32,
-    y_range: Range<i32>,
+    y_begin: i32, // Inclusive
+    y_end: i32,   // Inclusive
+    start_length: u32,
 }
 
 impl VerticalSegment {
-    fn cross_vert_seg(&self, other: &VerticalSegment) -> Vec<Point> {
+    fn y_range(&self) -> RangeInclusive<i32> {
+        min(self.y_begin, self.y_end)..=max(self.y_begin, self.y_end)
+    }
+
+    fn cross_vert_seg(&self, other: &VerticalSegment) -> Vec<CrossPoint> {
         if self.x != other.x {
             Vec::new()
         } else {
-            range_intersect(&self.y_range, &other.y_range)
+            range_intersect(&self.y_range(), &other.y_range())
                 .iter()
-                .map(|&y| Point { x: self.x, y })
+                .map(|&y| {
+                    let length = self.start_length + y.abs_diff(self.y_begin) + 1;
+                    let other_length = other.start_length + y.abs_diff(other.y_begin) + 1;
+                    CrossPoint::new(self.x, y, length + other_length)
+                })
                 .collect()
         }
     }
 
-    fn cross_horz_seg(&self, horz_seg: &HorizontalSegment) -> Option<Point> {
+    fn cross_horz_seg(&self, horz_seg: &HorizontalSegment) -> Option<CrossPoint> {
         cross_horz_vert_seg(horz_seg, self)
     }
 }
@@ -94,10 +139,12 @@ impl FromStr for Wire {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut cur_point = Point::new(0, 0);
+        let mut cur_length: u32 = 0;
         let mut wire = Wire {
             horz_segs: Vec::new(),
             vert_segs: Vec::new(),
         };
+
         for path in s.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()) {
             let step_count = str::parse::<i32>(&path[1..])
                 .map_err(|_| Error::ParsePathError(path.to_string()))?;
@@ -105,33 +152,43 @@ impl FromStr for Wire {
                 'U' => {
                     wire.vert_segs.push(VerticalSegment {
                         x: cur_point.x,
-                        y_range: (cur_point.y + 1)..(cur_point.y + step_count + 1),
+                        y_begin: cur_point.y + 1,
+                        y_end: cur_point.y + step_count,
+                        start_length: cur_length,
                     });
                     cur_point.y += step_count;
                 }
                 'D' => {
                     wire.vert_segs.push(VerticalSegment {
                         x: cur_point.x,
-                        y_range: (cur_point.y - 1)..(cur_point.y - step_count - 1),
+                        y_begin: cur_point.y - 1,
+                        y_end: cur_point.y - step_count,
+                        start_length: cur_length,
                     });
                     cur_point.y -= step_count;
                 }
                 'L' => {
                     wire.horz_segs.push(HorizontalSegment {
-                        x_range: (cur_point.x - 1)..(cur_point.x - step_count - 1),
+                        x_begin: cur_point.x - 1,
+                        x_end: cur_point.x - step_count,
                         y: cur_point.y,
+                        start_length: cur_length,
                     });
                     cur_point.x -= step_count;
                 }
                 'R' => {
                     wire.horz_segs.push(HorizontalSegment {
-                        x_range: (cur_point.x + 1)..(cur_point.x + step_count + 1),
+                        x_begin: cur_point.x + 1,
+                        x_end: cur_point.x + step_count,
                         y: cur_point.y,
+                        start_length: cur_length,
                     });
                     cur_point.x += step_count;
                 }
                 c => return Err(Error::UnknownPathDirection(c)),
             }
+
+            cur_length += u32::try_from(step_count.abs()).unwrap();
         }
 
         wire.horz_segs.sort_unstable_by_key(|s| s.y);
@@ -142,7 +199,7 @@ impl FromStr for Wire {
 }
 
 impl Wire {
-    pub fn cross(&self, other: &Wire) -> Vec<Point> {
+    pub fn cross(&self, other: &Wire) -> Vec<CrossPoint> {
         let mut cross_points = Vec::new();
         for h_seg in &self.horz_segs {
             // Horizontal cross horizontal
@@ -159,8 +216,10 @@ impl Wire {
             // Horizontal cross vertical
             let in_x_range_left_ind = other
                 .vert_segs
-                .partition_point(|s| s.x < h_seg.x_range.start);
-            let in_x_range_right_ind = other.vert_segs.partition_point(|s| s.x < h_seg.x_range.end);
+                .partition_point(|s| s.x < *h_seg.x_range().start());
+            let in_x_range_right_ind = other
+                .vert_segs
+                .partition_point(|s| s.x <= *h_seg.x_range().end());
             if in_x_range_left_ind < in_x_range_right_ind {
                 cross_points.extend(
                     other.vert_segs[in_x_range_left_ind..in_x_range_right_ind]
@@ -185,8 +244,10 @@ impl Wire {
             // Vertical cross horizontal
             let in_y_range_left_ind = other
                 .horz_segs
-                .partition_point(|s| s.y < v_seg.y_range.start);
-            let in_y_range_right_ind = other.horz_segs.partition_point(|s| s.y < v_seg.y_range.end);
+                .partition_point(|s| s.y < *v_seg.y_range().start());
+            let in_y_range_right_ind = other
+                .horz_segs
+                .partition_point(|s| s.y <= *v_seg.y_range().end());
             if in_y_range_left_ind < in_y_range_right_ind {
                 cross_points.extend(
                     other.horz_segs[in_y_range_left_ind..in_y_range_right_ind]
