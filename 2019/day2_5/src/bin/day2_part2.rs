@@ -1,4 +1,4 @@
-use day2_5::int_code::{read_int_code, com::IntCodeComputer};
+use day2_5::int_code::{com::IntCodeComputer, read_int_code};
 
 fn main() {
     let int_code_file = "day2_inputs.txt";
@@ -14,7 +14,10 @@ fn main() {
             match computer.execute(int_code_image, Vec::new()) {
                 Ok(res) => println!(
                     "{:>2} | {:>2}: After {} steps, program halts, code[0] = {}",
-                    code1, code2, res.step_count(), res.image()[0]
+                    code1,
+                    code2,
+                    res.step_count(),
+                    res.image()[0]
                 ),
                 Err(e) => println!("Failed to run int code, get error({})", e),
             }

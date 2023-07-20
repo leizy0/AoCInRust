@@ -1,6 +1,6 @@
 use crate::Error;
 
-use super::inst::{Instruction, parse_cur_inst};
+use super::inst::{parse_cur_inst, Instruction};
 
 pub trait ExecutionState {
     fn image(&self) -> &[i32];
@@ -11,8 +11,7 @@ pub trait ExecutionState {
     fn halt(&mut self);
 }
 
-pub struct IntCodeComputer {
-}
+pub struct IntCodeComputer {}
 
 pub struct ExecutionResult {
     step_count: usize,
@@ -22,7 +21,11 @@ pub struct ExecutionResult {
 
 impl ExecutionResult {
     fn new(step_count: usize, image: Vec<i32>, outputs: Vec<i32>) -> ExecutionResult {
-        ExecutionResult { step_count, image, outputs }
+        ExecutionResult {
+            step_count,
+            image,
+            outputs,
+        }
     }
 
     pub fn step_count(&self) -> usize {
@@ -40,14 +43,19 @@ impl ExecutionResult {
 
 impl IntCodeComputer {
     pub fn new() -> Self {
-        IntCodeComputer {  }
+        IntCodeComputer {}
     }
 
-    pub fn execute(&mut self, mut image: Vec<i32>, inputs: Vec<i32>) -> Result<ExecutionResult, Error> {
+    pub fn execute(
+        &mut self,
+        mut image: Vec<i32>,
+        inputs: Vec<i32>,
+    ) -> Result<ExecutionResult, Error> {
         let mut process = Process::new(&mut image, inputs);
         let mut step_count = 0;
         loop {
             let inst = process.cur_inst()?;
+            println!("Step {}: {:?} @ {}", step_count, inst, process.inst_p());
             inst.execute(&mut process)?;
             step_count += 1;
             if process.is_halt() {
@@ -69,7 +77,7 @@ struct Process<'a> {
     outputs: Vec<i32>,
 }
 
-impl <'a> Process<'a> {
+impl<'a> Process<'a> {
     fn new(image: &'a mut Vec<i32>, inputs: Vec<i32>) -> Self {
         Process {
             inst_p: 0,
@@ -79,6 +87,10 @@ impl <'a> Process<'a> {
             input_ind: 0,
             outputs: Vec::new(),
         }
+    }
+
+    fn inst_p(&self) -> usize {
+        self.inst_p
     }
 
     fn cur_inst(&self) -> Result<Box<dyn Instruction>, Error> {
@@ -94,7 +106,7 @@ impl <'a> Process<'a> {
     }
 }
 
-impl <'a> ExecutionState for Process<'a> {
+impl<'a> ExecutionState for Process<'a> {
     fn image(&self) -> &[i32] {
         &self.image
     }

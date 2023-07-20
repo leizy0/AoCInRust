@@ -18,7 +18,9 @@ where
 
     reader.lines().next().map_or(Err(Error::EmptyError), |res| {
         res.map_err(Error::IOError).and_then(|s| {
-            s.split(',').map(|s| str::parse::<i32>(s).map_err(|_| Error::ParseIntError(s.to_string()))).collect::<Result<Vec<_>, Error>>()
+            s.split(',')
+                .map(|s| str::parse::<i32>(s).map_err(|_| Error::ParseIntError(s.to_string())))
+                .collect::<Result<Vec<_>, Error>>()
         })
     })
 }

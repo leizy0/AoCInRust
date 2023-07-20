@@ -7,7 +7,7 @@ fn main() {
         int_code_file
     ));
     let mut computer = IntCodeComputer::new();
-    let code_inputs = vec![1];
+    let code_inputs = vec![5];
     match computer.execute(int_code, code_inputs) {
         Ok(res) => println!(
             "After {} steps, execution finished, Outputs: {:?}",
