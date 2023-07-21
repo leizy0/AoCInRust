@@ -50,6 +50,31 @@ impl OrbitTree {
         })
     }
 
+    pub fn has_obj(&self, obj: &Object) -> bool {
+        self.obj_id(obj).is_some()
+    }
+
+    pub fn obj_id(&self, obj: &Object) -> Option<usize> {
+        self.object_map.get(obj).cloned()
+    }
+
+    pub fn obj(&self, id: usize) -> Option<&Object> {
+        self.objects.get(id)
+    }
+
+    pub fn orbit_path_of(&self, obj: &Object) -> Option<Vec<usize>> {
+        self.object_map.get(obj).map(|&id| {
+            let mut path = Vec::new();
+            let mut cur_id = id;
+            while cur_id != Self::null_obj_id() {
+                path.push(cur_id);
+                cur_id = self.orbit_links[cur_id];
+            }
+
+            path
+        })
+    }
+
     fn add_orbit(&mut self, orbit: Orbit) -> Result<(), Error> {
         let orbited_id = self.add_obj(orbit.orbited);
         let orbiter_id = self.add_obj(orbit.orbiter);
