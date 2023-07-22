@@ -11,7 +11,9 @@ pub trait ExecutionState {
     fn halt(&mut self);
 }
 
-pub struct IntCodeComputer {}
+pub struct IntCodeComputer {
+    pub enable_debug_output: bool,
+}
 
 pub struct ExecutionResult {
     step_count: usize,
@@ -42,8 +44,10 @@ impl ExecutionResult {
 }
 
 impl IntCodeComputer {
-    pub fn new() -> Self {
-        IntCodeComputer {}
+    pub fn new(enable_debug_output: bool) -> Self {
+        IntCodeComputer {
+            enable_debug_output,
+        }
     }
 
     pub fn execute(
@@ -55,7 +59,9 @@ impl IntCodeComputer {
         let mut step_count = 0;
         loop {
             let inst = process.cur_inst()?;
-            println!("Step {}: {:?} @ {}", step_count, inst, process.inst_p());
+            if self.enable_debug_output {
+                println!("Step {}: {:?} @ {}", step_count, inst, process.inst_p());
+            }
             inst.execute(&mut process)?;
             step_count += 1;
             if process.is_halt() {
