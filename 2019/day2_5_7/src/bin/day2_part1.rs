@@ -1,4 +1,4 @@
-use day2_5::int_code::{com::IntCodeComputer, read_int_code};
+use day2_5_7::int_code::{com::IntCodeComputer, read_int_code};
 
 fn main() {
     let int_code_file = "day2_inputs.txt";
@@ -6,7 +6,7 @@ fn main() {
         .expect(&format!("Failed to read int code from {}", int_code_file));
     int_code[1] = 12;
     int_code[2] = 2;
-    let mut computer = IntCodeComputer::new();
+    let mut computer = IntCodeComputer::new(false);
     match computer.execute(int_code, Vec::new()) {
         Ok(res) => println!(
             "After {} steps, program halt, code[0] = {}",

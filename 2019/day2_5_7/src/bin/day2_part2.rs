@@ -1,11 +1,11 @@
-use day2_5::int_code::{com::IntCodeComputer, read_int_code};
+use day2_5_7::int_code::{com::IntCodeComputer, read_int_code};
 
 fn main() {
     let int_code_file = "day2_inputs.txt";
     let int_code = read_int_code(int_code_file)
         .expect(&format!("Failed to read int code from {}", int_code_file));
 
-    let mut computer = IntCodeComputer::new();
+    let mut computer = IntCodeComputer::new(false);
     for code1 in 0..3 {
         for code2 in 0..=9 {
             let mut int_code_image = int_code.clone();
