@@ -19,6 +19,8 @@ pub enum Error {
     ExecutionExceedIntCode(usize, usize),
     NotEnoughInput,
     InvalidJumpTarget(i32),
+    RunningUnknownProcess(usize),
+    ProcessResultNotFound(usize, usize),
 }
 
 impl Display for Error {
@@ -61,6 +63,14 @@ impl Display for Error {
             ),
             Error::NotEnoughInput => write!(f, "Not enough input in execution, inputs exhausted"),
             Error::InvalidJumpTarget(t) => write!(f, "Invalid jump target({})", t),
+            Error::RunningUnknownProcess(id) => {
+                write!(f, "Try to run unknown process({}) in computer", id)
+            }
+            Error::ProcessResultNotFound(pid, cid) => write!(
+                f,
+                "Process({}) result with output channel({}) not found after execution",
+                pid, cid
+            ),
         }
     }
 }
