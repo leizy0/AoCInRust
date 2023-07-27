@@ -3,11 +3,11 @@ use std::fmt::Display;
 use crate::int_code::com::{IntCodeComputer, ProcessState};
 
 pub struct AmpSettings {
-    settings: Vec<Vec<i32>>,
+    settings: Vec<Vec<i64>>,
 }
 
-impl From<&[i32]> for AmpSettings {
-    fn from(init_setting: &[i32]) -> Self {
+impl From<&[i64]> for AmpSettings {
+    fn from(init_setting: &[i64]) -> Self {
         AmpSettings {
             settings: Self::gen_permutation(init_setting),
         }
@@ -16,7 +16,7 @@ impl From<&[i32]> for AmpSettings {
 
 impl AmpSettings {
     pub fn new(amp_count: usize) -> AmpSettings {
-        let init_setting = (0..amp_count as i32).collect::<Vec<_>>();
+        let init_setting = (0..amp_count as i64).collect::<Vec<_>>();
         Self::from(init_setting.as_slice())
     }
 
@@ -24,7 +24,7 @@ impl AmpSettings {
         AmpSettingsIterator::new(&self.settings)
     }
 
-    fn gen_permutation(init_numbers: &[i32]) -> Vec<Vec<i32>> {
+    fn gen_permutation(init_numbers: &[i64]) -> Vec<Vec<i64>> {
         let mut permutations = Vec::new();
         let mut numbers = Vec::from(init_numbers);
         let number_count = numbers.len();
@@ -34,8 +34,8 @@ impl AmpSettings {
 
     // Heap's algorithm to generate permutation of slice.
     fn gen_permutation_recur(
-        permutations: &mut Vec<Vec<i32>>,
-        numbers: &mut [i32],
+        permutations: &mut Vec<Vec<i64>>,
+        numbers: &mut [i64],
         cur_size: usize,
     ) {
         if cur_size <= 1 {
@@ -56,12 +56,12 @@ impl AmpSettings {
 }
 
 pub struct AmpSettingsIterator<'a> {
-    settings: &'a [Vec<i32>],
+    settings: &'a [Vec<i64>],
     next_ind: usize,
 }
 
 impl<'a> AmpSettingsIterator<'a> {
-    fn new(settings: &'a [Vec<i32>]) -> Self {
+    fn new(settings: &'a [Vec<i64>]) -> Self {
         AmpSettingsIterator {
             settings,
             next_ind: 0,
@@ -70,7 +70,7 @@ impl<'a> AmpSettingsIterator<'a> {
 }
 
 impl<'a> Iterator for AmpSettingsIterator<'a> {
-    type Item = &'a [i32];
+    type Item = &'a [i64];
 
     fn next(&mut self) -> Option<Self::Item> {
         let cur_ind = self.next_ind;
@@ -81,8 +81,8 @@ impl<'a> Iterator for AmpSettingsIterator<'a> {
 
 #[derive(Debug)]
 pub enum Error {
-    EmptyAmplifierResult(Vec<i32>),
-    ExecutionError(crate::Error, Vec<i32>),
+    EmptyAmplifierResult(Vec<i64>),
+    ExecutionError(crate::Error, Vec<i64>),
     ProcessesExecutionError(crate::Error),
     AmplifierInLoopStuck,
     EmptyOutputFromAmplifierLoop,
@@ -113,11 +113,11 @@ impl Display for Error {
     }
 }
 
-pub fn amp_once(
+pub fn amp_chain(
     computer: &mut IntCodeComputer,
-    int_code: &[i32],
-    settings: &[i32],
-) -> Result<i32, Error> {
+    int_code: &[i64],
+    settings: &[i64],
+) -> Result<i64, Error> {
     let mut amp_res = 0;
     for i in 0..settings.len() {
         let image = Vec::from(int_code);
@@ -136,9 +136,9 @@ pub fn amp_once(
 
 pub fn amp_loop(
     computer: &mut IntCodeComputer,
-    int_code: &[i32],
-    setting: &[i32],
-) -> Result<i32, Error> {
+    int_code: &[i64],
+    setting: &[i64],
+) -> Result<i64, Error> {
     let amp_count = setting.len();
     let amp_channels = (0..amp_count)
         .map(|i| {

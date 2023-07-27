@@ -9,7 +9,7 @@ use std::{
 
 use crate::Error;
 
-pub fn read_int_code<P>(path: P) -> Result<Vec<i32>, Error>
+pub fn read_int_code<P>(path: P) -> Result<Vec<i64>, Error>
 where
     P: AsRef<Path>,
 {
@@ -19,7 +19,7 @@ where
     reader.lines().next().map_or(Err(Error::EmptyError), |res| {
         res.map_err(Error::IOError).and_then(|s| {
             s.split(',')
-                .map(|s| str::parse::<i32>(s).map_err(|_| Error::ParseIntError(s.to_string())))
+                .map(|s| str::parse::<i64>(s).map_err(|_| Error::ParseIntError(s.to_string())))
                 .collect::<Result<Vec<_>, Error>>()
         })
     })

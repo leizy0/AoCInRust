@@ -8,9 +8,9 @@ pub enum Error {
     IOError(std::io::Error),
     EmptyError,
     ParseIntError(String),
-    ImageIndexError(i32),
-    InvalidWriteImageMode(u8),
-    InvalidOpcode(i32),
+    ImageIndexError(i64),
+    InvalidWriteMemoryMode(u8),
+    InvalidOpcode(i64),
     InvalidOpcodeIndex(u32),
     UnknownParameterMode(u32),
     OpcodeNotMatchingForInstruction(String, u32),
@@ -18,7 +18,7 @@ pub enum Error {
     MissingCodeForInstruction(u32),
     ExecutionExceedIntCode(usize, usize),
     NotEnoughInput,
-    InvalidJumpTarget(i32),
+    InvalidJumpTarget(i64),
     RunningUnknownProcess(usize),
     ProcessResultNotFound(usize, usize),
 }
@@ -30,9 +30,9 @@ impl Display for Error {
             Error::EmptyError => write!(f, "Get empty code in file"),
             Error::ParseIntError(s) => write!(f, "Failed to parse integer from string({})", s),
             Error::ImageIndexError(i) => write!(f, "Invalid index({}) found in execution", i),
-            Error::InvalidWriteImageMode(m) => write!(
+            Error::InvalidWriteMemoryMode(m) => write!(
                 f,
-                "Invalid parameter mode({}) found when write into image",
+                "Invalid parameter mode({}) found when write into memory",
                 m
             ),
             Error::InvalidOpcodeIndex(c) => {

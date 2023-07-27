@@ -5,11 +5,13 @@ use crate::Error;
 use super::inst::{parse_cur_inst, Instruction};
 
 pub trait ExecutionState {
-    fn image(&self) -> &[i32];
-    fn image_mut(&mut self) -> &mut [i32];
-    fn input(&mut self) -> Option<i32>;
-    fn output(&mut self, value: i32);
+    fn read_mem(&mut self, ind: usize) -> i64;
+    fn write_mem(&mut self, ind: usize, value: i64);
+    fn input(&mut self) -> Option<i64>;
+    fn output(&mut self, value: i64);
     fn inst_p_mut(&mut self) -> &mut usize;
+    fn rel_base(&self) -> i64;
+    fn rel_base_mut(&mut self) -> &mut i64;
     fn halt(&mut self);
 }
 
@@ -28,7 +30,7 @@ impl IntCodeComputer {
         }
     }
 
-    pub fn execute(&mut self, image: Vec<i32>, inputs: Vec<i32>) -> Result<ExecutionResult, Error> {
+    pub fn execute(&mut self, image: Vec<i64>, inputs: Vec<i64>) -> Result<ExecutionResult, Error> {
         let input_chan_id = self.new_channel(&inputs);
         let output_chan_id = self.new_channel(&[]);
         let proc_id = self.new_proc(&image, input_chan_id, output_chan_id);
@@ -136,7 +138,7 @@ impl IntCodeComputer {
         Ok(())
     }
 
-    pub fn new_channel(&mut self, init_input: &[i32]) -> usize {
+    pub fn new_channel(&mut self, init_input: &[i64]) -> usize {
         let chan = Channel::new(init_input);
         for (i, slot) in self.channels.iter_mut().enumerate() {
             if slot.is_none() {
@@ -152,7 +154,7 @@ impl IntCodeComputer {
 
     pub fn new_proc(
         &mut self,
-        int_code: &[i32],
+        int_code: &[i64],
         input_chan_id: usize,
         output_chan_id: usize,
     ) -> usize {
@@ -217,12 +219,12 @@ impl IntCodeComputer {
 }
 
 struct Channel {
-    data: VecDeque<i32>,
+    data: VecDeque<i64>,
     output_reg_proc_id: Option<usize>,
 }
 
 impl Channel {
-    fn new(init_input: &[i32]) -> Self {
+    fn new(init_input: &[i64]) -> Self {
         Self {
             data: VecDeque::from_iter(init_input.iter().copied()),
             output_reg_proc_id: None,
@@ -233,11 +235,11 @@ impl Channel {
         self.output_reg_proc_id = Some(proc_id);
     }
 
-    fn get(&mut self) -> Option<i32> {
+    fn get(&mut self) -> Option<i64> {
         self.data.pop_front()
     }
 
-    fn put(&mut self, value: i32) {
+    fn put(&mut self, value: i64) {
         self.data.push_back(value);
     }
 
@@ -249,7 +251,7 @@ impl Channel {
 pub struct ProcessSnapshot {
     step_count: usize,
     state: ProcessState,
-    image: Vec<i32>,
+    image: Vec<i64>,
 }
 
 impl ProcessSnapshot {
@@ -261,20 +263,20 @@ impl ProcessSnapshot {
         self.step_count
     }
 
-    pub fn image(&self) -> &[i32] {
+    pub fn image(&self) -> &[i64] {
         &self.image
     }
 }
 
 pub struct ProcsExecutionResult {
     proc_snapshots: HashMap<usize, ProcessSnapshot>,
-    outputs: HashMap<usize, VecDeque<i32>>,
+    outputs: HashMap<usize, VecDeque<i64>>,
 }
 
 impl ProcsExecutionResult {
     fn new(
         proc_snapshots: HashMap<usize, ProcessSnapshot>,
-        mut outputs: HashMap<usize, VecDeque<i32>>,
+        mut outputs: HashMap<usize, VecDeque<i64>>,
     ) -> Self {
         outputs.iter_mut().for_each(|(_, vd)| {
             vd.make_contiguous();
@@ -290,7 +292,7 @@ impl ProcsExecutionResult {
         self.proc_snapshots.get(&proc_id)
     }
 
-    pub fn output(&self, chan_id: usize) -> Option<&[i32]> {
+    pub fn output(&self, chan_id: usize) -> Option<&[i64]> {
         self.outputs.get(&chan_id).map(|vd| vd.as_slices().0)
     }
 
@@ -314,8 +316,8 @@ impl ProcsExecutionResult {
 
 pub struct ExecutionResult {
     step_count: usize,
-    image: Vec<i32>,
-    outputs: Vec<i32>,
+    image: Vec<i64>,
+    outputs: Vec<i64>,
 }
 
 impl ExecutionResult {
@@ -323,11 +325,11 @@ impl ExecutionResult {
         self.step_count
     }
 
-    pub fn image(&self) -> &[i32] {
+    pub fn image(&self) -> &[i64] {
         &self.image
     }
 
-    pub fn outputs(&self) -> &[i32] {
+    pub fn outputs(&self) -> &[i64] {
         &self.outputs
     }
 }
@@ -343,21 +345,23 @@ pub enum ProcessState {
 struct Process {
     state: ProcessState,
     inst_p: usize,
-    image: Vec<i32>,
+    mem: Vec<i64>,
     input_chan_id: usize,
     output_chan_id: usize,
     step_count: usize,
+    rel_base: i64,
 }
 
 impl Process {
-    fn new(image: &[i32], input_chan_id: usize, output_chan_id: usize) -> Self {
+    fn new(image: &[i64], input_chan_id: usize, output_chan_id: usize) -> Self {
         Process {
             state: ProcessState::Ready,
             inst_p: 0,
-            image: Vec::from(image),
+            mem: Vec::from(image),
             input_chan_id,
             output_chan_id,
             step_count: 0,
+            rel_base: 0,
         }
     }
 
@@ -366,10 +370,10 @@ impl Process {
     }
 
     fn cur_inst(&self) -> Result<Box<dyn Instruction>, Error> {
-        if self.inst_p >= self.image.len() {
-            Err(Error::ExecutionExceedIntCode(self.inst_p, self.image.len()))
+        if self.inst_p >= self.mem.len() {
+            Err(Error::ExecutionExceedIntCode(self.inst_p, self.mem.len()))
         } else {
-            parse_cur_inst(&self.image[self.inst_p..])
+            parse_cur_inst(&self.mem[self.inst_p..])
         }
     }
 
@@ -381,7 +385,7 @@ impl Process {
         ProcessSnapshot {
             step_count: self.step_count,
             state: self.state,
-            image: self.image,
+            image: self.mem,
         }
     }
 }
@@ -402,15 +406,24 @@ impl<'a> RunningProcess<'a> {
 }
 
 impl<'a> ExecutionState for RunningProcess<'a> {
-    fn image(&self) -> &[i32] {
-        &self.run_proc().image
+    fn read_mem(&mut self, ind: usize) -> i64 {
+        if ind < self.run_proc().mem.len() {
+            self.run_proc().mem[ind]
+        } else {
+            self.run_proc_mut().mem.resize(ind + 1, 0);
+            self.run_proc().mem[ind]
+        }
     }
 
-    fn image_mut(&mut self) -> &mut [i32] {
-        &mut self.run_proc_mut().image
+    fn write_mem(&mut self, ind: usize, value: i64) {
+        if ind >= self.run_proc().mem.len() {
+            self.run_proc_mut().mem.resize(ind + 1, 0);
+        }
+
+        self.run_proc_mut().mem[ind] = value;
     }
 
-    fn input(&mut self) -> Option<i32> {
+    fn input(&mut self) -> Option<i64> {
         let res = self
             .computer
             .chan_mut(self.run_proc().input_chan_id)
@@ -423,7 +436,7 @@ impl<'a> ExecutionState for RunningProcess<'a> {
         res
     }
 
-    fn output(&mut self, value: i32) {
+    fn output(&mut self, value: i64) {
         let awake_id = self
             .computer
             .chan_mut(self.run_proc().output_chan_id)
@@ -452,5 +465,13 @@ impl<'a> ExecutionState for RunningProcess<'a> {
 
     fn inst_p_mut(&mut self) -> &mut usize {
         &mut self.run_proc_mut().inst_p
+    }
+
+    fn rel_base(&self) -> i64 {
+        self.run_proc().rel_base
+    }
+
+    fn rel_base_mut(&mut self) -> &mut i64 {
+        &mut self.run_proc_mut().rel_base
     }
 }

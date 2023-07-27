@@ -13,13 +13,14 @@ pub enum ParameterMode {
     #[default]
     Position = 0,
     Immediate = 1,
+    Relative = 2,
 }
 
 pub trait Instruction: Debug {
     fn opcode_ind(&self) -> u32;
     fn length(&self) -> usize;
-    fn params(&self) -> &[i32];
-    fn params_mut(&mut self) -> &mut [i32];
+    fn params(&self) -> &[i64];
+    fn params_mut(&mut self) -> &mut [i64];
     fn param_modes(&self) -> &[ParameterMode];
     fn param_modes_mut(&mut self) -> &mut [ParameterMode];
     fn execute(&self, exe_state: &mut dyn ExecutionState) -> Result<(), Error>;
@@ -28,40 +29,56 @@ pub trait Instruction: Debug {
         *exe_state.inst_p_mut() += self.length();
     }
 
-    fn read_image(image: &[i32], param: i32, param_mode: ParameterMode) -> Result<i32, Error>
+    fn read_mem(
+        exe_state: &mut dyn ExecutionState,
+        param: i64,
+        param_mode: ParameterMode,
+    ) -> Result<i64, Error>
     where
         Self: Sized,
     {
         match param_mode {
-            ParameterMode::Position => {
-                if param < 0 || param >= image.len() as i32 {
-                    Err(Error::ImageIndexError(param))
+            ParameterMode::Position | ParameterMode::Relative => {
+                let pos = if param_mode == ParameterMode::Relative {
+                    exe_state.rel_base() + param
                 } else {
-                    Ok(image[param as usize])
+                    param
+                };
+
+                if pos < 0 {
+                    Err(Error::ImageIndexError(pos))
+                } else {
+                    Ok(exe_state.read_mem(pos as usize))
                 }
             }
             ParameterMode::Immediate => Ok(param),
         }
     }
 
-    fn write_image(
-        image: &mut [i32],
-        param: i32,
+    fn write_mem(
+        exe_state: &mut dyn ExecutionState,
+        param: i64,
         param_mode: ParameterMode,
-        value: i32,
+        value: i64,
     ) -> Result<(), Error>
     where
         Self: Sized,
     {
-        if param_mode != ParameterMode::Position {
-            return Err(Error::InvalidWriteImageMode(param_mode.int_value()));
-        }
+        match param_mode {
+            ParameterMode::Position | ParameterMode::Relative => {
+                let pos = if param_mode == ParameterMode::Relative {
+                    exe_state.rel_base() + param
+                } else {
+                    param
+                };
 
-        if param < 0 || param >= image.len() as i32 {
-            Err(Error::ImageIndexError(param))
-        } else {
-            image[param as usize] = value;
-            Ok(())
+                if pos < 0 {
+                    Err(Error::ImageIndexError(param))
+                } else {
+                    Ok(exe_state.write_mem(pos as usize, value))
+                }
+            }
+            ParameterMode::Immediate => Err(Error::InvalidWriteMemoryMode(param_mode.int_value())),
         }
     }
 }
@@ -77,10 +94,11 @@ pub enum InstOpcodeInd {
     JumpIfFalse = 6,
     LessThan = 7,
     Equals = 8,
+    AdjustRelativeBase = 9,
     Halt = 99,
 }
 
-type ParseFunc = fn(&[i32]) -> Result<Box<dyn Instruction>, Error>;
+type ParseFunc = fn(&[i64]) -> Result<Box<dyn Instruction>, Error>;
 static INST_PARSE_MAP: Lazy<HashMap<InstOpcodeInd, ParseFunc>> = Lazy::new(|| {
     let mut map = HashMap::new();
     map.insert(InstOpcodeInd::Add, parse_inst::<Add> as ParseFunc);
@@ -97,12 +115,16 @@ static INST_PARSE_MAP: Lazy<HashMap<InstOpcodeInd, ParseFunc>> = Lazy::new(|| {
     );
     map.insert(InstOpcodeInd::LessThan, parse_inst::<LessThan> as ParseFunc);
     map.insert(InstOpcodeInd::Equals, parse_inst::<Equals> as ParseFunc);
+    map.insert(
+        InstOpcodeInd::AdjustRelativeBase,
+        parse_inst::<AdjustRelativeBase> as ParseFunc,
+    );
     map.insert(InstOpcodeInd::Halt, parse_inst::<Halt> as ParseFunc);
 
     map
 });
 
-pub fn parse_cur_inst(code: &[i32]) -> Result<Box<dyn Instruction>, Error> {
+pub fn parse_cur_inst(code: &[i64]) -> Result<Box<dyn Instruction>, Error> {
     let cur_opcode_ind = parse_opcode_ind(code[0])
         .and_then(|n| InstOpcodeInd::from_int(n).map_err(|_| Error::InvalidOpcodeIndex(n)))?;
     let parse_func = INST_PARSE_MAP
@@ -111,7 +133,7 @@ pub fn parse_cur_inst(code: &[i32]) -> Result<Box<dyn Instruction>, Error> {
     parse_func(code)
 }
 
-fn parse_inst<I>(code: &[i32]) -> Result<Box<dyn Instruction>, Error>
+fn parse_inst<I>(code: &[i64]) -> Result<Box<dyn Instruction>, Error>
 where
     I: Instruction + Default + 'static,
 {
@@ -130,7 +152,7 @@ where
 }
 
 fn parse_opcode(
-    opcode: i32,
+    opcode: i64,
     expect_opcode_ind: u32,
     param_modes: &mut [ParameterMode],
 ) -> Result<(), Error> {
@@ -153,7 +175,7 @@ fn parse_opcode(
     Ok(())
 }
 
-fn parse_opcode_ind(opcode: i32) -> Result<u32, Error> {
+fn parse_opcode_ind(opcode: i64) -> Result<u32, Error> {
     if opcode < 0 {
         Err(Error::InvalidOpcode(opcode))
     } else {
@@ -163,7 +185,7 @@ fn parse_opcode_ind(opcode: i32) -> Result<u32, Error> {
 
 #[derive(Debug, Default)]
 pub struct Add {
-    params: [i32; 3],
+    params: [i64; 3],
     param_modes: [ParameterMode; 3],
 }
 
@@ -178,11 +200,11 @@ impl Instruction for Add {
         InstOpcodeInd::Add.int_value()
     }
 
-    fn params(&self) -> &[i32] {
+    fn params(&self) -> &[i64] {
         &self.params
     }
 
-    fn params_mut(&mut self) -> &mut [i32] {
+    fn params_mut(&mut self) -> &mut [i64] {
         &mut self.params
     }
 
@@ -195,10 +217,10 @@ impl Instruction for Add {
     }
 
     fn execute(&self, exe_state: &mut dyn ExecutionState) -> Result<(), Error> {
-        let input0 = Self::read_image(exe_state.image(), self.params[0], self.param_modes[0])?;
-        let input1 = Self::read_image(exe_state.image(), self.params[1], self.param_modes[1])?;
-        Self::write_image(
-            exe_state.image_mut(),
+        let input0 = Self::read_mem(exe_state, self.params[0], self.param_modes[0])?;
+        let input1 = Self::read_mem(exe_state, self.params[1], self.param_modes[1])?;
+        Self::write_mem(
+            exe_state,
             self.params[2],
             self.param_modes[2],
             input0 + input1,
@@ -211,7 +233,7 @@ impl Instruction for Add {
 
 #[derive(Debug, Default)]
 pub struct Multiply {
-    params: [i32; 3],
+    params: [i64; 3],
     param_modes: [ParameterMode; 3],
 }
 
@@ -226,11 +248,11 @@ impl Instruction for Multiply {
         InstOpcodeInd::Multiply.int_value()
     }
 
-    fn params(&self) -> &[i32] {
+    fn params(&self) -> &[i64] {
         &self.params
     }
 
-    fn params_mut(&mut self) -> &mut [i32] {
+    fn params_mut(&mut self) -> &mut [i64] {
         &mut self.params
     }
 
@@ -243,10 +265,10 @@ impl Instruction for Multiply {
     }
 
     fn execute(&self, exe_state: &mut dyn ExecutionState) -> Result<(), Error> {
-        let input0 = Self::read_image(exe_state.image(), self.params[0], self.param_modes[0])?;
-        let input1 = Self::read_image(exe_state.image(), self.params[1], self.param_modes[1])?;
-        Self::write_image(
-            exe_state.image_mut(),
+        let input0 = Self::read_mem(exe_state, self.params[0], self.param_modes[0])?;
+        let input1 = Self::read_mem(exe_state, self.params[1], self.param_modes[1])?;
+        Self::write_mem(
+            exe_state,
             self.params[2],
             self.param_modes[2],
             input0 * input1,
@@ -259,7 +281,7 @@ impl Instruction for Multiply {
 
 #[derive(Debug, Default)]
 pub struct Halt {
-    params: [i32; 0],
+    params: [i64; 0],
     param_modes: [ParameterMode; 0],
 }
 
@@ -274,11 +296,11 @@ impl Instruction for Halt {
         InstOpcodeInd::Halt.int_value()
     }
 
-    fn params(&self) -> &[i32] {
+    fn params(&self) -> &[i64] {
         &self.params
     }
 
-    fn params_mut(&mut self) -> &mut [i32] {
+    fn params_mut(&mut self) -> &mut [i64] {
         &mut self.params
     }
 
@@ -300,7 +322,7 @@ impl Instruction for Halt {
 
 #[derive(Debug, Default)]
 pub struct Input {
-    params: [i32; 1],
+    params: [i64; 1],
     param_modes: [ParameterMode; 1],
 }
 
@@ -315,11 +337,11 @@ impl Instruction for Input {
         InstOpcodeInd::Input.int_value()
     }
 
-    fn params(&self) -> &[i32] {
+    fn params(&self) -> &[i64] {
         &self.params
     }
 
-    fn params_mut(&mut self) -> &mut [i32] {
+    fn params_mut(&mut self) -> &mut [i64] {
         &mut self.params
     }
 
@@ -333,12 +355,7 @@ impl Instruction for Input {
 
     fn execute(&self, exe_state: &mut dyn ExecutionState) -> Result<(), Error> {
         let input = exe_state.input().ok_or(Error::NotEnoughInput)?;
-        Self::write_image(
-            exe_state.image_mut(),
-            self.params[0],
-            self.param_modes[0],
-            input,
-        )?;
+        Self::write_mem(exe_state, self.params[0], self.param_modes[0], input)?;
         self.forward_inst_p(exe_state);
 
         Ok(())
@@ -347,7 +364,7 @@ impl Instruction for Input {
 
 #[derive(Debug, Default)]
 pub struct Output {
-    params: [i32; 1],
+    params: [i64; 1],
     param_modes: [ParameterMode; 1],
 }
 
@@ -362,11 +379,11 @@ impl Instruction for Output {
         InstOpcodeInd::Output.int_value()
     }
 
-    fn params(&self) -> &[i32] {
+    fn params(&self) -> &[i64] {
         &self.params
     }
 
-    fn params_mut(&mut self) -> &mut [i32] {
+    fn params_mut(&mut self) -> &mut [i64] {
         &mut self.params
     }
 
@@ -379,11 +396,8 @@ impl Instruction for Output {
     }
 
     fn execute(&self, exe_state: &mut dyn ExecutionState) -> Result<(), Error> {
-        exe_state.output(Self::read_image(
-            exe_state.image(),
-            self.params[0],
-            self.param_modes[0],
-        )?);
+        let value = Self::read_mem(exe_state, self.params[0], self.param_modes[0])?;
+        exe_state.output(value);
         self.forward_inst_p(exe_state);
 
         Ok(())
@@ -392,7 +406,7 @@ impl Instruction for Output {
 
 #[derive(Debug, Default)]
 pub struct JumpIfTrue {
-    params: [i32; 2],
+    params: [i64; 2],
     param_modes: [ParameterMode; 2],
 }
 
@@ -407,11 +421,11 @@ impl Instruction for JumpIfTrue {
         InstOpcodeInd::JumpIfTrue.int_value()
     }
 
-    fn params(&self) -> &[i32] {
+    fn params(&self) -> &[i64] {
         &self.params
     }
 
-    fn params_mut(&mut self) -> &mut [i32] {
+    fn params_mut(&mut self) -> &mut [i64] {
         &mut self.params
     }
 
@@ -424,9 +438,9 @@ impl Instruction for JumpIfTrue {
     }
 
     fn execute(&self, exe_state: &mut dyn ExecutionState) -> Result<(), Error> {
-        let condition = Self::read_image(exe_state.image(), self.params[0], self.param_modes[0])?;
+        let condition = Self::read_mem(exe_state, self.params[0], self.param_modes[0])?;
         if condition != 0 {
-            let target = Self::read_image(exe_state.image(), self.params[1], self.param_modes[1])?;
+            let target = Self::read_mem(exe_state, self.params[1], self.param_modes[1])?;
             *exe_state.inst_p_mut() =
                 usize::try_from(target).map_err(|_| Error::InvalidJumpTarget(target))?;
         } else {
@@ -439,7 +453,7 @@ impl Instruction for JumpIfTrue {
 
 #[derive(Debug, Default)]
 pub struct JumpIfFalse {
-    params: [i32; 2],
+    params: [i64; 2],
     param_modes: [ParameterMode; 2],
 }
 
@@ -454,11 +468,11 @@ impl Instruction for JumpIfFalse {
         InstOpcodeInd::JumpIfFalse.int_value()
     }
 
-    fn params(&self) -> &[i32] {
+    fn params(&self) -> &[i64] {
         &self.params
     }
 
-    fn params_mut(&mut self) -> &mut [i32] {
+    fn params_mut(&mut self) -> &mut [i64] {
         &mut self.params
     }
 
@@ -471,9 +485,9 @@ impl Instruction for JumpIfFalse {
     }
 
     fn execute(&self, exe_state: &mut dyn ExecutionState) -> Result<(), Error> {
-        let condition = Self::read_image(exe_state.image(), self.params[0], self.param_modes[0])?;
+        let condition = Self::read_mem(exe_state, self.params[0], self.param_modes[0])?;
         if condition == 0 {
-            let target = Self::read_image(exe_state.image(), self.params[1], self.param_modes[1])?;
+            let target = Self::read_mem(exe_state, self.params[1], self.param_modes[1])?;
             *exe_state.inst_p_mut() =
                 usize::try_from(target).map_err(|_| Error::InvalidJumpTarget(target))?;
         } else {
@@ -486,7 +500,7 @@ impl Instruction for JumpIfFalse {
 
 #[derive(Debug, Default)]
 pub struct LessThan {
-    params: [i32; 3],
+    params: [i64; 3],
     param_modes: [ParameterMode; 3],
 }
 
@@ -501,11 +515,11 @@ impl Instruction for LessThan {
         InstOpcodeInd::LessThan.int_value()
     }
 
-    fn params(&self) -> &[i32] {
+    fn params(&self) -> &[i64] {
         &self.params
     }
 
-    fn params_mut(&mut self) -> &mut [i32] {
+    fn params_mut(&mut self) -> &mut [i64] {
         &mut self.params
     }
 
@@ -518,10 +532,10 @@ impl Instruction for LessThan {
     }
 
     fn execute(&self, exe_state: &mut dyn ExecutionState) -> Result<(), Error> {
-        let input0 = Self::read_image(exe_state.image(), self.params[0], self.param_modes[0])?;
-        let input1 = Self::read_image(exe_state.image(), self.params[1], self.param_modes[1])?;
-        Self::write_image(
-            exe_state.image_mut(),
+        let input0 = Self::read_mem(exe_state, self.params[0], self.param_modes[0])?;
+        let input1 = Self::read_mem(exe_state, self.params[1], self.param_modes[1])?;
+        Self::write_mem(
+            exe_state,
             self.params[2],
             self.param_modes[2],
             if input0 < input1 { 1 } else { 0 },
@@ -534,7 +548,7 @@ impl Instruction for LessThan {
 
 #[derive(Debug, Default)]
 pub struct Equals {
-    params: [i32; 3],
+    params: [i64; 3],
     param_modes: [ParameterMode; 3],
 }
 
@@ -549,11 +563,11 @@ impl Instruction for Equals {
         InstOpcodeInd::Equals.int_value()
     }
 
-    fn params(&self) -> &[i32] {
+    fn params(&self) -> &[i64] {
         &self.params
     }
 
-    fn params_mut(&mut self) -> &mut [i32] {
+    fn params_mut(&mut self) -> &mut [i64] {
         &mut self.params
     }
 
@@ -566,14 +580,56 @@ impl Instruction for Equals {
     }
 
     fn execute(&self, exe_state: &mut dyn ExecutionState) -> Result<(), Error> {
-        let input0 = Self::read_image(exe_state.image(), self.params[0], self.param_modes[0])?;
-        let input1 = Self::read_image(exe_state.image(), self.params[1], self.param_modes[1])?;
-        Self::write_image(
-            exe_state.image_mut(),
+        let input0 = Self::read_mem(exe_state, self.params[0], self.param_modes[0])?;
+        let input1 = Self::read_mem(exe_state, self.params[1], self.param_modes[1])?;
+        Self::write_mem(
+            exe_state,
             self.params[2],
             self.param_modes[2],
             if input0 == input1 { 1 } else { 0 },
         )?;
+        self.forward_inst_p(exe_state);
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct AdjustRelativeBase {
+    params: [i64; 1],
+    param_modes: [ParameterMode; 1],
+}
+
+impl Instruction for AdjustRelativeBase {
+    #[inline]
+    fn length(&self) -> usize {
+        2
+    }
+
+    #[inline]
+    fn opcode_ind(&self) -> u32 {
+        InstOpcodeInd::AdjustRelativeBase.int_value()
+    }
+
+    fn params(&self) -> &[i64] {
+        &self.params
+    }
+
+    fn params_mut(&mut self) -> &mut [i64] {
+        &mut self.params
+    }
+
+    fn param_modes(&self) -> &[ParameterMode] {
+        &self.param_modes
+    }
+
+    fn param_modes_mut(&mut self) -> &mut [ParameterMode] {
+        &mut self.param_modes
+    }
+
+    fn execute(&self, exe_state: &mut dyn ExecutionState) -> Result<(), Error> {
+        let offset = Self::read_mem(exe_state, self.params[0], self.param_modes[0])?;
+        *exe_state.rel_base_mut() += offset;
         self.forward_inst_p(exe_state);
 
         Ok(())
