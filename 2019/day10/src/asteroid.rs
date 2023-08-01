@@ -7,16 +7,32 @@ use std::{
 
 use crate::Error;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct Asteroid {
     x: usize,
     y: usize,
 }
 
+impl Asteroid {
+    fn offset_to(&self, other: &Asteroid) -> (i32, i32) {
+        (
+            i32::try_from(other.x).unwrap() - i32::try_from(self.x).unwrap(),
+            i32::try_from(other.y).unwrap() - i32::try_from(self.y).unwrap(),
+        )
+    }
+
+    fn simplest_offset_to(&self, other: &Asteroid) -> (i32, i32) {
+        let (offset_x, offset_y) = self.offset_to(other);
+        let offset_gcd = gcd(offset_x, offset_y);
+
+        (offset_x / offset_gcd, offset_y / offset_gcd)
+    }
+}
+
 pub struct AsteroidMap {
     asteroids: Vec<Asteroid>,
     position_map: Vec<Vec<Option<usize>>>,
-    detect_matrix: RefCell<Vec<Vec<Option<bool>>>>,
+    detect_matrix: RefCell<Vec<Vec<Option<usize>>>>,
     detect_counts: RefCell<Vec<Option<usize>>>,
 }
 
@@ -73,8 +89,8 @@ impl AsteroidMap {
         self.detect_counts.borrow_mut().get_mut(ind).and_then(|o| {
             if o.is_none() {
                 let mut detect_count = 0;
-                for a_ind in (0..self.asteroids.len()).filter(|&n| n != ind) {
-                    if self.can_detect(ind, a_ind) {
+                for a_ind in (0..self.asteroid_count()).filter(|&n| n != ind) {
+                    if self.detect_ind(ind, a_ind) == 1 {
                         detect_count += 1;
                     }
                 }
@@ -86,21 +102,43 @@ impl AsteroidMap {
         })
     }
 
-    fn can_detect(&self, ind0: usize, ind1: usize) -> bool {
+    pub fn vaporize_order(&self, ind: usize) -> Option<Vec<usize>> {
+        if ind >= self.asteroid_count() {
+            None
+        } else {
+            let mut coords = (0..self.asteroid_count())
+                .filter(|&n| n != ind)
+                .map(|a_ind| {
+                    (
+                        a_ind,
+                        VaporizationCoordinate::new(
+                            self.asteroid(ind).unwrap(),
+                            self.asteroid(a_ind).unwrap(),
+                        ),
+                        self.detect_ind(ind, a_ind),
+                    )
+                })
+                .collect::<Vec<_>>();
+            coords.sort_unstable_by_key(|(_, vc, _)| *vc);
+            coords.sort_by_key(|(_, _, detect_ind)| *detect_ind);
+            Some(
+                coords
+                    .iter()
+                    .map(|(a_ind, _, _)| *a_ind)
+                    .collect::<Vec<_>>(),
+            )
+        }
+    }
+
+    fn detect_ind(&self, ind0: usize, ind1: usize) -> usize {
         if ind0 == ind1 {
-            return true;
+            return 0;
         }
 
         self.get_detection(ind0, ind1).unwrap_or_else(|| {
             let asteroid0 = &self.asteroids[ind0];
             let asteroid1 = &self.asteroids[ind1];
-            let offset_x =
-                i32::try_from(asteroid0.x).unwrap() - i32::try_from(asteroid1.x).unwrap();
-            let offset_y =
-                i32::try_from(asteroid0.y).unwrap() - i32::try_from(asteroid1.y).unwrap();
-            let offset_gcd = gcd(offset_x, offset_y);
-            let offset_unit_x = offset_x / offset_gcd;
-            let offset_unit_y = offset_y / offset_gcd;
+            let (offset_unit_x, offset_unit_y) = asteroid0.simplest_offset_to(asteroid1);
 
             self.perform_detection(ind0, offset_unit_x, offset_unit_y);
             self.perform_detection(ind0, -offset_unit_x, -offset_unit_y);
@@ -109,7 +147,7 @@ impl AsteroidMap {
         })
     }
 
-    fn get_detection(&self, ind0: usize, ind1: usize) -> Option<bool> {
+    fn get_detection(&self, ind0: usize, ind1: usize) -> Option<usize> {
         self.detection_index(ind0, ind1).and_then(|(r_ind, c_ind)| {
             self.detect_matrix
                 .borrow()
@@ -118,17 +156,17 @@ impl AsteroidMap {
         })
     }
 
-    fn set_detection(&self, ind0: usize, ind1: usize, detectable: bool) {
+    fn set_detection(&self, ind0: usize, ind1: usize, detect_ind: usize) {
         self.detection_index(ind0, ind1).map(|(r_ind, c_ind)| {
             self.detect_matrix
                 .borrow_mut()
                 .get_mut(r_ind)
-                .map(|v| v.get_mut(c_ind).map(|ob| *ob = Some(detectable)));
+                .map(|v| v.get_mut(c_ind).map(|ob| *ob = Some(detect_ind)));
         });
     }
 
     fn detection_index(&self, ind0: usize, ind1: usize) -> Option<(usize, usize)> {
-        if ind0 >= self.asteroids.len() || ind1 >= self.asteroids.len() || ind0 == ind1 {
+        if ind0 >= self.asteroid_count() || ind1 >= self.asteroid_count() || ind0 == ind1 {
             None
         } else {
             let ind_min = ind0.min(ind1);
@@ -141,11 +179,11 @@ impl AsteroidMap {
     }
 
     fn perform_detection(&self, start_ind: usize, offset_x: i32, offset_y: i32) {
-        if start_ind >= self.asteroids.len() {
+        if start_ind >= self.asteroid_count() {
             return;
         }
 
-        let mut detected = false;
+        let mut detect_ind = 1;
         let asteroid = &self.asteroids[start_ind];
         let mut cur_x = i32::try_from(asteroid.x).unwrap();
         let mut cur_y = i32::try_from(asteroid.y).unwrap();
@@ -158,11 +196,9 @@ impl AsteroidMap {
 
             self.asteroid_index(cur_x, cur_y).map(|ind| {
                 if self.get_detection(ind, start_ind).is_none() {
-                    self.set_detection(ind, start_ind, !detected);
-                    if !detected {
-                        detected = true;
-                    }
+                    self.set_detection(ind, start_ind, detect_ind);
                 }
+                detect_ind += 1;
             });
         }
     }
@@ -180,6 +216,52 @@ impl AsteroidMap {
         } else {
             self.position_map[y as usize][x as usize]
         }
+    }
+}
+
+#[derive(PartialEq, Eq, Clone, Copy)]
+struct VaporizationCoordinate {
+    vap_offset_x: i32,
+    vap_offset_y: i32,
+}
+
+impl VaporizationCoordinate {
+    fn new(center_asteroid: &Asteroid, vap_asteroid: &Asteroid) -> Self {
+        let (sim_offset_x, sim_offset_y) = center_asteroid.simplest_offset_to(vap_asteroid);
+        Self {
+            vap_offset_x: sim_offset_x,
+            vap_offset_y: sim_offset_y,
+        }
+    }
+
+    fn with_offset(vap_offset_x: i32, vap_offset_y: i32) -> Self {
+        Self {
+            vap_offset_x,
+            vap_offset_y,
+        }
+    }
+
+    fn vap_deg(&self) -> f32 {
+        let x = self.vap_offset_x as f32;
+        let y = self.vap_offset_y as f32;
+        let res = y.atan2(x) + std::f32::consts::FRAC_PI_2;
+        if res < 0.0 {
+            res + std::f32::consts::PI * 2.0
+        } else {
+            res
+        }
+    }
+}
+
+impl PartialOrd for VaporizationCoordinate {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for VaporizationCoordinate {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.vap_deg().total_cmp(&other.vap_deg())
     }
 }
 
@@ -210,4 +292,48 @@ fn gcd(n0: i32, n1: i32) -> i32 {
     }
 
     large
+}
+
+#[test]
+fn test_vc_vap_degree_axis() {
+    assert!(f_eq(
+        VaporizationCoordinate::with_offset(0, -1).vap_deg(),
+        0.0
+    ));
+    assert!(f_eq(
+        VaporizationCoordinate::with_offset(1, 0).vap_deg(),
+        std::f32::consts::FRAC_PI_2
+    ));
+    assert!(f_eq(
+        VaporizationCoordinate::with_offset(0, 1).vap_deg(),
+        std::f32::consts::PI
+    ));
+    assert!(f_eq(
+        VaporizationCoordinate::with_offset(-1, 0).vap_deg(),
+        std::f32::consts::PI * 3.0 / 2.0
+    ));
+}
+
+#[test]
+fn test_vc_vap_degree_pi_over_4() {
+    assert!(f_eq(
+        VaporizationCoordinate::with_offset(1, -1).vap_deg(),
+        std::f32::consts::FRAC_PI_4
+    ));
+    assert!(f_eq(
+        VaporizationCoordinate::with_offset(1, 1).vap_deg(),
+        std::f32::consts::FRAC_PI_4 * 3.0
+    ));
+    assert!(f_eq(
+        VaporizationCoordinate::with_offset(-1, 1).vap_deg(),
+        std::f32::consts::FRAC_PI_4 * 5.0
+    ));
+    assert!(f_eq(
+        VaporizationCoordinate::with_offset(-1, -1).vap_deg(),
+        std::f32::consts::FRAC_PI_4 * 7.0
+    ));
+}
+
+fn f_eq(l: f32, r: f32) -> bool {
+    (l - r).abs() <= std::f32::EPSILON
 }
