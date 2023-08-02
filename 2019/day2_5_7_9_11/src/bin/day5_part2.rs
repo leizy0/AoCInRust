@@ -1,4 +1,4 @@
-use day2_5_7_9::int_code::{com::IntCodeComputer, read_int_code};
+use day2_5_7_9_11::int_code::{com::IntCodeComputer, read_int_code};
 
 fn main() {
     let int_code_file = "day5_inputs.txt";
@@ -7,7 +7,7 @@ fn main() {
         int_code_file
     ));
     let mut computer = IntCodeComputer::new(false);
-    let code_inputs = vec![1];
+    let code_inputs = vec![5];
     match computer.execute(int_code, code_inputs) {
         Ok(res) => println!(
             "After {} steps, execution finished, Outputs: {:?}",
