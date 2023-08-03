@@ -19,16 +19,16 @@ impl Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Error::InvalidCommand(c) => {
-                write!(f, "Invalid command from outputs({:?}) of paint program", c)
+                write!(f, "Invalid command from outputs({:?}) of paint program, expect exactly two numbers(the first is for painting color, the second is for turnning direction", c)
             }
             Error::InvalidPaintColor(n) => write!(
                 f,
-                "Invalid paint color number({}) found in output of paint program",
+                "Invalid paint color number({}) found in output of paint program, expect 0(black) or 1(white)",
                 n
             ),
             Error::InvalidTurnDirection(n) => write!(
                 f,
-                "Invalid turn direction number({}) found in output of paint program",
+                "Invalid turn direction number({}) found in output of paint program, expect 0(left) or 1(right)",
                 n
             ),
         }
@@ -77,9 +77,73 @@ impl Direction {
 
 #[repr(u8)]
 #[derive(IntEnum, Debug, Clone, Copy)]
-enum Color {
+pub enum Color {
     Black = 0,
     White = 1,
+}
+
+pub struct Image {
+    pixels: Vec<Color>,
+    width: usize,
+    height: usize,
+}
+
+impl Image {
+    fn from_blocks(blocks: &HashMap<Block, Color>) -> Self {
+        let (mut x_min, mut y_min, mut x_max, mut y_max) = (i32::MAX, i32::MAX, i32::MIN, i32::MIN);
+        for (b, _) in blocks {
+            if b.x < x_min {
+                x_min = b.x;
+            } else if b.x > x_max {
+                x_max = b.x;
+            }
+
+            if b.y < y_min {
+                y_min = b.y;
+            } else if b.y > y_max {
+                y_max = b.y;
+            }
+        }
+
+        let width = x_max - x_min + 1;
+        let height = y_max - y_min + 1;
+        if width <= 0 || height <= 0 {
+            Self {
+                pixels: Vec::new(),
+                width: 0,
+                height: 0,
+            }
+        } else {
+            let mut pixels = vec![Color::Black; (width * height) as usize];
+            for (b, &c) in blocks {
+                let r_ind = height - 1 - (b.y - y_min);
+                let c_ind = b.x - x_min;
+                let ind = r_ind * width + c_ind;
+                pixels[ind as usize] = c;
+            }
+
+            Self {
+                pixels,
+                width: width as usize,
+                height: height as usize,
+            }
+        }
+    }
+}
+
+impl Display for Image {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for r in 0..self.height {
+            let r_offset = r * self.width;
+            for c in 0..self.width {
+                let ind = r_offset + c;
+                write!(f, "{}", self.pixels[ind].int_value())?;
+            }
+            writeln!(f)?;
+        }
+
+        Ok(())
+    }
 }
 
 pub struct PaintRobot {
@@ -107,16 +171,20 @@ impl PaintRobot {
         self.paint_blocks.len()
     }
 
+    pub fn paint(&mut self, color: Color) {
+        *self.paint_blocks.entry(self.cur_block).or_insert(color) = color;
+        self.paint_count += 1;
+    }
+
+    pub fn image(&self) -> Image {
+        Image::from_blocks(&self.paint_blocks)
+    }
+
     fn cur_color(&self) -> Color {
         self.paint_blocks
             .get(&self.cur_block)
             .copied()
             .unwrap_or(Color::Black)
-    }
-
-    fn paint(&mut self, color: Color) {
-        *self.paint_blocks.entry(self.cur_block).or_insert(color) = color;
-        self.paint_count += 1;
     }
 
     fn turn_left(&mut self) {
