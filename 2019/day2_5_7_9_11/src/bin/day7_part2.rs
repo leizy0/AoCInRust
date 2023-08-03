@@ -1,6 +1,6 @@
-use day2_5_7_9::amp::{amp_loop, AmpSettings};
-use day2_5_7_9::int_code::com::IntCodeComputer;
-use day2_5_7_9::int_code::read_int_code;
+use day2_5_7_9_11::amp::{amp_loop, AmpSettings};
+use day2_5_7_9_11::int_code::com::IntCodeComputer;
+use day2_5_7_9_11::int_code::read_int_code;
 
 fn main() {
     let init_amp_setting = (5..10).collect::<Vec<i64>>();

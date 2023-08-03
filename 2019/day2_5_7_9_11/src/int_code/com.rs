@@ -21,6 +21,10 @@ pub struct IntCodeComputer {
     processes: Vec<Option<Process>>,
 }
 
+pub trait InputPort {
+    fn input(&mut self, value: i64);
+}
+
 impl IntCodeComputer {
     pub fn new(enable_debug_output: bool) -> Self {
         IntCodeComputer {
@@ -41,6 +45,44 @@ impl IntCodeComputer {
                     .extract(proc_id, output_chan_id)
                     .ok_or(Error::ProcessResultNotFound(proc_id, output_chan_id))
             })
+    }
+
+    pub fn execute_with<F>(
+        &mut self,
+        image: &[i64],
+        mut iop_fn: F,
+    ) -> Result<ExecutionResult, Error>
+    where
+        F: FnMut(&mut dyn InputPort, &[i64]) -> Result<(), Error>,
+    {
+        let input_chan_id = self.new_channel(&[]);
+        let output_chan_id = self.new_channel(&[]);
+        let proc_id = self.new_proc(&image, input_chan_id, output_chan_id);
+        let mut output_ind = 0;
+
+        loop {
+            self.exe_proc(proc_id)?;
+            if self.proc(proc_id).unwrap().is_halt() {
+                break;
+            }
+
+            let cur_output = self
+                .chan(output_chan_id)
+                .unwrap()
+                .data
+                .range(output_ind..)
+                .copied()
+                .collect::<Vec<_>>();
+            output_ind += cur_output.len();
+            iop_fn(self.chan_mut(input_chan_id).unwrap(), &cur_output)?;
+            self.awake_proc(proc_id);
+        }
+
+        let res = ExecutionResult::from_com(self, proc_id);
+        self.take_proc(proc_id);
+        self.take_chan(input_chan_id);
+        self.take_chan(output_chan_id);
+        Ok(res)
     }
 
     pub fn exe_procs(
@@ -194,6 +236,10 @@ impl IntCodeComputer {
         self.channels.get_mut(chan_id).and_then(|o| o.as_mut())
     }
 
+    fn chan(&self, chan_id: usize) -> Option<&Channel> {
+        self.channels.get(chan_id).and_then(|o| o.as_ref())
+    }
+
     fn take_proc(&mut self, proc_id: usize) -> Option<Process> {
         self.processes.get_mut(proc_id).and_then(|o| o.take())
     }
@@ -221,6 +267,12 @@ impl IntCodeComputer {
 struct Channel {
     data: VecDeque<i64>,
     output_reg_proc_id: Option<usize>,
+}
+
+impl InputPort for Channel {
+    fn input(&mut self, value: i64) {
+        self.put(value);
+    }
 }
 
 impl Channel {
@@ -314,6 +366,7 @@ impl ProcsExecutionResult {
     }
 }
 
+#[derive(Debug, Default)]
 pub struct ExecutionResult {
     step_count: usize,
     image: Vec<i64>,
@@ -321,6 +374,16 @@ pub struct ExecutionResult {
 }
 
 impl ExecutionResult {
+    fn from_com(com: &IntCodeComputer, proc_id: usize) -> Self {
+        com.proc(proc_id).map_or(Self::default(), |p| Self {
+            step_count: p.step_count,
+            image: p.mem.clone(),
+            outputs: com
+                .chan(p.output_chan_id)
+                .map_or(Vec::new(), |c| Vec::from_iter(c.data.iter().copied())),
+        })
+    }
+
     pub fn step_count(&self) -> usize {
         self.step_count
     }

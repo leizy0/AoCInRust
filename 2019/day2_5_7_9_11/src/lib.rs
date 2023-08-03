@@ -2,6 +2,7 @@ use std::fmt::Display;
 
 pub mod amp;
 pub mod int_code;
+pub mod paint;
 
 #[derive(Debug)]
 pub enum Error {
@@ -21,6 +22,7 @@ pub enum Error {
     InvalidJumpTarget(i64),
     RunningUnknownProcess(usize),
     ProcessResultNotFound(usize, usize),
+    IOProcessError(String),
 }
 
 impl Display for Error {
@@ -71,6 +73,7 @@ impl Display for Error {
                 "Process({}) result with output channel({}) not found after execution",
                 pid, cid
             ),
+            Error::IOProcessError(s) => write!(f, "Found error in I/O processing({})", s),
         }
     }
 }

@@ -1,4 +1,4 @@
-use day2_5_7_9::int_code::{com::IntCodeComputer, read_int_code};
+use day2_5_7_9_11::int_code::{com::IntCodeComputer, read_int_code};
 
 fn main() {
     let input_path = "day9_inputs.txt";
@@ -14,15 +14,15 @@ fn main() {
     };
 
     let mut computer = IntCodeComputer::new(true);
-    let test_mode_input = vec![2];
+    let test_mode_input = vec![1];
     match computer.execute(int_code, test_mode_input) {
         Ok(res) => println!(
-            "Boost program in sensor boost mode takes {} steps to finish, get outputs({:?})",
+            "Boost program in test mode takes {} steps to finish, get outputs({:?})",
             res.step_count(),
             res.outputs()
         ),
         Err(e) => eprintln!(
-            "Failed to execute Boost program in sensor boost, get error({})",
+            "Failed to execute Boost program in test mode, get error({})",
             e
         ),
     }
