@@ -397,7 +397,7 @@ impl Instruction for Output {
 
     fn execute(&self, exe_state: &mut dyn ExecutionState) -> Result<(), Error> {
         let value = Self::read_mem(exe_state, self.params[0], self.param_modes[0])?;
-        exe_state.output(value);
+        exe_state.output(value)?;
         self.forward_inst_p(exe_state);
 
         Ok(())

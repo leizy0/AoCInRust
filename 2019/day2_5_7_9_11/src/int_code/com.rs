@@ -1,4 +1,8 @@
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::{
+    cell::RefCell,
+    collections::{HashMap, VecDeque},
+    rc::Rc,
+};
 
 use crate::Error;
 
@@ -8,81 +12,67 @@ pub trait ExecutionState {
     fn read_mem(&mut self, ind: usize) -> i64;
     fn write_mem(&mut self, ind: usize, value: i64);
     fn input(&mut self) -> Option<i64>;
-    fn output(&mut self, value: i64);
+    fn output(&mut self, value: i64) -> Result<(), Error>;
     fn inst_p_mut(&mut self) -> &mut usize;
     fn rel_base(&self) -> i64;
     fn rel_base_mut(&mut self) -> &mut i64;
     fn halt(&mut self);
 }
 
-pub struct IntCodeComputer {
-    pub enable_debug_output: bool,
-    channels: Vec<Option<Channel>>,
-    processes: Vec<Option<Process>>,
+// Input port for process, data source
+pub trait InputPort {
+    fn get(&mut self) -> Option<i64>;
+    fn reg_proc(&mut self, proc_id: usize);
 }
 
-pub trait InputPort {
-    fn input(&mut self, value: i64);
+// Output port for process, data sink
+pub trait OutputPort {
+    fn put(&mut self, value: i64) -> Result<(), Error>;
+    fn wait_proc_id(&self) -> Option<usize>;
+}
+
+pub struct IntCodeComputer {
+    pub enable_debug_output: bool,
+    processes: Vec<Option<Process>>,
 }
 
 impl IntCodeComputer {
     pub fn new(enable_debug_output: bool) -> Self {
         IntCodeComputer {
             enable_debug_output,
-            channels: Vec::new(),
             processes: Vec::new(),
         }
     }
 
-    pub fn execute(&mut self, image: Vec<i64>, inputs: Vec<i64>) -> Result<ExecutionResult, Error> {
-        let input_chan_id = self.new_channel(&inputs);
-        let output_chan_id = self.new_channel(&[]);
-        let proc_id = self.new_proc(&image, input_chan_id, output_chan_id);
+    // pub fn execute(&mut self, image: Vec<i64>, inputs: Vec<i64>) -> Result<ExecutionResult, Error> {
+    //     let input_chan_id = self.new_channel(&inputs);
+    //     let output_chan_id = self.new_channel(&[]);
+    //     let proc_id = self.new_proc(&image, input_chan_id, output_chan_id);
 
-        self.exe_procs(&[proc_id], proc_id)
-            .and_then(|mut proc_res| {
-                proc_res
-                    .extract(proc_id, output_chan_id)
-                    .ok_or(Error::ProcessResultNotFound(proc_id, output_chan_id))
-            })
-    }
+    //     self.exe_procs(&[proc_id], proc_id)
+    //         .and_then(|mut proc_res| {
+    //             proc_res
+    //                 .extract(proc_id, output_chan_id)
+    //                 .ok_or(Error::ProcessResultNotFound(proc_id, output_chan_id))
+    //         })
+    // }
 
-    pub fn execute_with<F>(
+    pub fn execute_with_io(
         &mut self,
         image: &[i64],
-        mut iop_fn: F,
-    ) -> Result<ExecutionResult, Error>
-    where
-        F: FnMut(&mut dyn InputPort, &[i64]) -> Result<(), Error>,
-    {
-        let input_chan_id = self.new_channel(&[]);
-        let output_chan_id = self.new_channel(&[]);
-        let proc_id = self.new_proc(&image, input_chan_id, output_chan_id);
-        let mut output_ind = 0;
-
+        input_port: Rc<RefCell<dyn InputPort>>,
+        output_port: Rc<RefCell<dyn OutputPort>>,
+    ) -> Result<ProcessResult, Error> {
+        let proc_id = self.new_proc(&image, input_port, output_port);
         loop {
             self.exe_proc(proc_id)?;
-            if self.proc(proc_id).unwrap().is_halt() {
+            let state = self.proc(proc_id).unwrap().state;
+            if state == ProcessState::Halt || state == ProcessState::Block {
                 break;
             }
-
-            let cur_output = self
-                .chan(output_chan_id)
-                .unwrap()
-                .data
-                .range(output_ind..)
-                .copied()
-                .collect::<Vec<_>>();
-            output_ind += cur_output.len();
-            iop_fn(self.chan_mut(input_chan_id).unwrap(), &cur_output)?;
-            self.awake_proc(proc_id);
         }
 
-        let res = ExecutionResult::from_com(self, proc_id);
-        self.take_proc(proc_id);
-        self.take_chan(input_chan_id);
-        self.take_chan(output_chan_id);
-        Ok(res)
+        Ok(self.take_proc(proc_id).map(|p| p.into_snap()).unwrap())
     }
 
     pub fn exe_procs(
@@ -110,19 +100,11 @@ impl IntCodeComputer {
                     }
                 }
                 None => {
-                    let output_chan_ids = proc_ids
-                        .iter()
-                        .flat_map(|pid| self.proc(*pid).map(|o| o.output_chan_id))
-                        .collect::<HashSet<_>>();
-                    let outputs = output_chan_ids
-                        .iter()
-                        .flat_map(|&id| self.take_chan(id).map(|c| (id, c.data)))
-                        .collect::<HashMap<_, _>>();
                     let images = proc_ids
                         .iter()
                         .flat_map(|&id| self.take_proc(id).map(|p| (id, p.into_snap())))
                         .collect::<HashMap<_, _>>();
-                    return Ok(ProcsExecutionResult::new(images, outputs));
+                    return Ok(ProcsExecutionResult::new(images));
                 }
             };
         }
@@ -180,27 +162,13 @@ impl IntCodeComputer {
         Ok(())
     }
 
-    pub fn new_channel(&mut self, init_input: &[i64]) -> usize {
-        let chan = Channel::new(init_input);
-        for (i, slot) in self.channels.iter_mut().enumerate() {
-            if slot.is_none() {
-                *slot = Some(chan);
-                return i;
-            }
-        }
-
-        self.channels.push(Some(chan));
-
-        self.channels.len() - 1
-    }
-
     pub fn new_proc(
         &mut self,
         int_code: &[i64],
-        input_chan_id: usize,
-        output_chan_id: usize,
+        input_port: Rc<RefCell<dyn InputPort>>,
+        output_port: Rc<RefCell<dyn OutputPort>>,
     ) -> usize {
-        let proc = Process::new(int_code, input_chan_id, output_chan_id);
+        let proc = Process::new(int_code, input_port.clone(), output_port);
         let mut exist_slot_id = None;
         for (i, slot) in self.processes.iter_mut().enumerate() {
             if slot.is_none() {
@@ -219,25 +187,9 @@ impl IntCodeComputer {
                 self.processes.len() - 1
             }
         };
-
-        match self.chan_mut(input_chan_id) {
-            Some(c) => c.reg_proc(id),
-            _ => (),
-        };
+        input_port.borrow_mut().reg_proc(id);
 
         id
-    }
-
-    fn take_chan(&mut self, chan_id: usize) -> Option<Channel> {
-        self.channels.get_mut(chan_id).and_then(|o| o.take())
-    }
-
-    fn chan_mut(&mut self, chan_id: usize) -> Option<&mut Channel> {
-        self.channels.get_mut(chan_id).and_then(|o| o.as_mut())
-    }
-
-    fn chan(&self, chan_id: usize) -> Option<&Channel> {
-        self.channels.get(chan_id).and_then(|o| o.as_ref())
     }
 
     fn take_proc(&mut self, proc_id: usize) -> Option<Process> {
@@ -264,49 +216,51 @@ impl IntCodeComputer {
     }
 }
 
-struct Channel {
+pub struct Channel {
     data: VecDeque<i64>,
     output_reg_proc_id: Option<usize>,
 }
 
 impl InputPort for Channel {
-    fn input(&mut self, value: i64) {
-        self.put(value);
+    fn get(&mut self) -> Option<i64> {
+        self.data.pop_front()
+    }
+
+    fn reg_proc(&mut self, proc_id: usize) {
+        self.output_reg_proc_id = Some(proc_id);
+    }
+}
+
+impl OutputPort for Channel {
+    fn put(&mut self, value: i64) -> Result<(), Error> {
+        Ok(self.data.push_back(value))
+    }
+
+    fn wait_proc_id(&self) -> Option<usize> {
+        self.output_reg_proc_id
     }
 }
 
 impl Channel {
-    fn new(init_input: &[i64]) -> Self {
+    pub fn new(init_input: &[i64]) -> Self {
         Self {
             data: VecDeque::from_iter(init_input.iter().copied()),
             output_reg_proc_id: None,
         }
     }
 
-    fn reg_proc(&mut self, proc_id: usize) {
-        self.output_reg_proc_id = Some(proc_id);
-    }
-
-    fn get(&mut self) -> Option<i64> {
-        self.data.pop_front()
-    }
-
-    fn put(&mut self, value: i64) {
-        self.data.push_back(value);
-    }
-
-    fn reg_proc_id(&self) -> Option<usize> {
-        self.output_reg_proc_id
+    pub fn data(&self) -> &VecDeque<i64> {
+        &self.data
     }
 }
 
-pub struct ProcessSnapshot {
+pub struct ProcessResult {
     step_count: usize,
     state: ProcessState,
     image: Vec<i64>,
 }
 
-impl ProcessSnapshot {
+impl ProcessResult {
     pub fn state(&self) -> ProcessState {
         self.state
     }
@@ -321,79 +275,16 @@ impl ProcessSnapshot {
 }
 
 pub struct ProcsExecutionResult {
-    proc_snapshots: HashMap<usize, ProcessSnapshot>,
-    outputs: HashMap<usize, VecDeque<i64>>,
+    proc_snapshots: HashMap<usize, ProcessResult>,
 }
 
 impl ProcsExecutionResult {
-    fn new(
-        proc_snapshots: HashMap<usize, ProcessSnapshot>,
-        mut outputs: HashMap<usize, VecDeque<i64>>,
-    ) -> Self {
-        outputs.iter_mut().for_each(|(_, vd)| {
-            vd.make_contiguous();
-        });
-
-        Self {
-            proc_snapshots,
-            outputs,
-        }
+    fn new(proc_snapshots: HashMap<usize, ProcessResult>) -> Self {
+        Self { proc_snapshots }
     }
 
-    pub fn proc_snapshots(&self, proc_id: usize) -> Option<&ProcessSnapshot> {
+    pub fn proc_snapshots(&self, proc_id: usize) -> Option<&ProcessResult> {
         self.proc_snapshots.get(&proc_id)
-    }
-
-    pub fn output(&self, chan_id: usize) -> Option<&[i64]> {
-        self.outputs.get(&chan_id).map(|vd| vd.as_slices().0)
-    }
-
-    fn extract(&mut self, proc_id: usize, chan_id: usize) -> Option<ExecutionResult> {
-        let proc = self.proc_snapshots.remove(&proc_id);
-        let output = self.outputs.remove(&chan_id);
-
-        if proc.is_some() && output.is_some() {
-            let proc = proc.unwrap();
-            let output = output.unwrap();
-            Some(ExecutionResult {
-                step_count: proc.step_count,
-                image: proc.image,
-                outputs: Vec::from_iter(output.iter().copied()),
-            })
-        } else {
-            None
-        }
-    }
-}
-
-#[derive(Debug, Default)]
-pub struct ExecutionResult {
-    step_count: usize,
-    image: Vec<i64>,
-    outputs: Vec<i64>,
-}
-
-impl ExecutionResult {
-    fn from_com(com: &IntCodeComputer, proc_id: usize) -> Self {
-        com.proc(proc_id).map_or(Self::default(), |p| Self {
-            step_count: p.step_count,
-            image: p.mem.clone(),
-            outputs: com
-                .chan(p.output_chan_id)
-                .map_or(Vec::new(), |c| Vec::from_iter(c.data.iter().copied())),
-        })
-    }
-
-    pub fn step_count(&self) -> usize {
-        self.step_count
-    }
-
-    pub fn image(&self) -> &[i64] {
-        &self.image
-    }
-
-    pub fn outputs(&self) -> &[i64] {
-        &self.outputs
     }
 }
 
@@ -409,20 +300,24 @@ struct Process {
     state: ProcessState,
     inst_p: usize,
     mem: Vec<i64>,
-    input_chan_id: usize,
-    output_chan_id: usize,
+    input_port: Rc<RefCell<dyn InputPort>>,
+    output_port: Rc<RefCell<dyn OutputPort>>,
     step_count: usize,
     rel_base: i64,
 }
 
 impl Process {
-    fn new(image: &[i64], input_chan_id: usize, output_chan_id: usize) -> Self {
+    fn new(
+        image: &[i64],
+        input_port: Rc<RefCell<dyn InputPort>>,
+        output_port: Rc<RefCell<dyn OutputPort>>,
+    ) -> Self {
         Process {
             state: ProcessState::Ready,
             inst_p: 0,
             mem: Vec::from(image),
-            input_chan_id,
-            output_chan_id,
+            input_port,
+            output_port,
             step_count: 0,
             rel_base: 0,
         }
@@ -444,8 +339,8 @@ impl Process {
         self.state == ProcessState::Halt
     }
 
-    fn into_snap(self) -> ProcessSnapshot {
-        ProcessSnapshot {
+    fn into_snap(self) -> ProcessResult {
+        ProcessResult {
             step_count: self.step_count,
             state: self.state,
             image: self.mem,
@@ -487,10 +382,7 @@ impl<'a> ExecutionState for RunningProcess<'a> {
     }
 
     fn input(&mut self) -> Option<i64> {
-        let res = self
-            .computer
-            .chan_mut(self.run_proc().input_chan_id)
-            .and_then(|c| c.get());
+        let res = self.run_proc_mut().input_port.borrow_mut().get();
         if res.is_none() {
             assert!(self.run_proc().state == ProcessState::Running);
             self.run_proc_mut().state = ProcessState::Block;
@@ -499,16 +391,11 @@ impl<'a> ExecutionState for RunningProcess<'a> {
         res
     }
 
-    fn output(&mut self, value: i64) {
-        let awake_id = self
-            .computer
-            .chan_mut(self.run_proc().output_chan_id)
-            .and_then(|c| {
-                c.put(value);
-                c.reg_proc_id()
-            });
+    fn output(&mut self, value: i64) -> Result<(), Error> {
+        self.run_proc_mut().output_port.borrow_mut().put(value)?;
 
-        match awake_id {
+        let wait_proc_id = self.run_proc_mut().output_port.borrow().wait_proc_id();
+        match wait_proc_id {
             Some(id) => {
                 if self.computer.enable_debug_output {
                     println!(
@@ -520,6 +407,8 @@ impl<'a> ExecutionState for RunningProcess<'a> {
             }
             _ => (),
         };
+
+        Ok(())
     }
 
     fn halt(&mut self) {

@@ -1,12 +1,11 @@
-use std::{
-    collections::HashMap,
-    fmt::Display,
-    sync::atomic::{AtomicBool, Ordering},
-};
+use std::{collections::HashMap, fmt::Display};
 
 use int_enum::IntEnum;
 
-use crate::{int_code::com::InputPort, Error as ExecutionError};
+use crate::{
+    int_code::com::{InputPort, OutputPort},
+    Error as ExecutionError,
+};
 
 #[derive(Debug)]
 pub enum Error {
@@ -202,42 +201,72 @@ impl PaintRobot {
     }
 }
 
-pub fn sim_paint(
-    robot: &mut PaintRobot,
-    input_port: &mut dyn InputPort,
-    outputs: &[i64],
-) -> Result<(), ExecutionError> {
-    static IS_INIT: AtomicBool = AtomicBool::new(true);
+pub struct PaintSimulator {
+    robot: PaintRobot,
+    sim_proc_id: Option<usize>,
+    sim_proc_output: Vec<i64>,
+}
 
-    // Run command from output
-    if IS_INIT.fetch_and(false, Ordering::Relaxed) {
-        // At first call, don't process outputs
-    } else if outputs.len() != 2 {
-        return Err(ExecutionError::IOProcessError(
-            Error::InvalidCommand(Vec::from(outputs)).to_string(),
-        ));
-    } else {
-        let paint_color = u8::try_from(outputs[0])
-            .ok()
-            .and_then(|n| Color::from_int(n).ok())
-            .ok_or(ExecutionError::IOProcessError(
-                Error::InvalidPaintColor(outputs[0]).to_string(),
-            ))?;
-        robot.paint(paint_color);
-        match outputs[1] {
-            0 => robot.turn_left(),
-            1 => robot.turn_right(),
-            _ => {
-                return Err(ExecutionError::IOProcessError(
-                    Error::InvalidTurnDirection(outputs[1]).to_string(),
-                ))
-            }
-        }
-        robot.forward();
+impl InputPort for PaintSimulator {
+    fn get(&mut self) -> Option<i64> {
+        // Report current state to input
+        Some(self.robot.cur_color().int_value().into())
     }
 
-    // Report current state to input
-    input_port.input(robot.cur_color().int_value().into());
+    fn reg_proc(&mut self, proc_id: usize) {
+        self.sim_proc_id = Some(proc_id);
+    }
+}
 
-    Ok(())
+impl OutputPort for PaintSimulator {
+    fn put(&mut self, value: i64) -> Result<(), ExecutionError> {
+        // Get command from simulation process
+        if self.sim_proc_output.len() % 2 == 0 {
+            // Paint command
+            let paint_color = u8::try_from(value)
+                .ok()
+                .and_then(|n| Color::from_int(n).ok())
+                .ok_or(ExecutionError::IOProcessError(
+                    Error::InvalidPaintColor(value).to_string(),
+                ))?;
+            self.robot.paint(paint_color);
+        } else {
+            // Turn around and forward command
+            match value {
+                0 => self.robot.turn_left(),
+                1 => self.robot.turn_right(),
+                _ => {
+                    return Err(ExecutionError::IOProcessError(
+                        Error::InvalidTurnDirection(value).to_string(),
+                    ))
+                }
+            }
+            self.robot.forward();
+        }
+        self.sim_proc_output.push(value);
+
+        Ok(())
+    }
+
+    fn wait_proc_id(&self) -> Option<usize> {
+        self.sim_proc_id
+    }
+}
+
+impl PaintSimulator {
+    pub fn new(robot: PaintRobot) -> Self {
+        Self {
+            robot,
+            sim_proc_id: None,
+            sim_proc_output: Vec::new(),
+        }
+    }
+
+    pub fn outputs(&self) -> &[i64] {
+        &self.sim_proc_output
+    }
+
+    pub fn robot(&self) -> &PaintRobot {
+        &self.robot
+    }
 }

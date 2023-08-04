@@ -1,6 +1,8 @@
+use std::{cell::RefCell, rc::Rc};
+
 use day2_5_7_9_11::{
     int_code::{com::IntCodeComputer, read_int_code},
-    paint::{sim_paint, Color, PaintRobot},
+    paint::{Color, PaintRobot, PaintSimulator},
 };
 
 fn main() {
@@ -18,18 +20,17 @@ fn main() {
 
     let mut robot = PaintRobot::new();
     robot.paint(Color::White);
+    let simulator = Rc::new(RefCell::new(PaintSimulator::new(robot)));
     let mut computer = IntCodeComputer::new(true);
-    match computer.execute_with(&int_code, |input, output| {
-        sim_paint(&mut robot, input, output)
-    }) {
+    match computer.execute_with_io(&int_code, simulator.clone(), simulator.clone()) {
         Ok(res) => println!(
             "After {} steps, painting program halt, get outputs({:?})",
             res.step_count(),
-            res.outputs()
+            simulator.borrow().outputs()
         ),
         Err(e) => eprintln!("Failed to run painting program, get error({})", e),
     };
 
     println!("After painting, robot get image:");
-    println!("{}", &robot.image());
+    println!("{}", &simulator.borrow().robot().image());
 }
