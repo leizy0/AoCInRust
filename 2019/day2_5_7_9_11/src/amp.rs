@@ -1,6 +1,6 @@
-use std::fmt::Display;
+use std::{cell::RefCell, fmt::Display, rc::Rc};
 
-use crate::int_code::com::{IntCodeComputer, ProcessState};
+use crate::int_code::com::{Channel, IntCodeComputer, ProcessState};
 
 pub struct AmpSettings {
     settings: Vec<Vec<i64>>,
@@ -81,6 +81,7 @@ impl<'a> Iterator for AmpSettingsIterator<'a> {
 
 #[derive(Debug)]
 pub enum Error {
+    ProcessBlockInChain(usize),
     EmptyAmplifierResult(Vec<i64>),
     ExecutionError(crate::Error, Vec<i64>),
     ProcessesExecutionError(crate::Error),
@@ -91,6 +92,9 @@ pub enum Error {
 impl Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Error::ProcessBlockInChain(ind) => {
+                write!(f, "Process(Amplifier #{}) blocked in amplifier chain", ind)
+            }
             Error::EmptyAmplifierResult(s) => {
                 write!(f, "Amplifiers have empty result with settings({:?})", s)
             }
@@ -121,11 +125,19 @@ pub fn amp_chain(
     let mut amp_res = 0;
     for i in 0..settings.len() {
         let image = Vec::from(int_code);
+        let input_chan = Rc::new(RefCell::new(Channel::new(&[settings[i], amp_res])));
+        let output_chan = Rc::new(RefCell::new(Channel::new(&[])));
         let res = computer
-            .execute(image, vec![settings[i], amp_res])
+            .execute_with_io(&image, input_chan.clone(), output_chan.clone())
             .map_err(|e| Error::ExecutionError(e, Vec::from(settings)))?;
-        amp_res = res
-            .outputs()
+
+        if res.state() != ProcessState::Halt {
+            return Err(Error::ProcessBlockInChain(i));
+        }
+
+        amp_res = output_chan
+            .borrow()
+            .data()
             .get(0)
             .cloned()
             .ok_or(Error::EmptyAmplifierResult(Vec::from(settings)))?;
@@ -143,14 +155,20 @@ pub fn amp_loop(
     let amp_channels = (0..amp_count)
         .map(|i| {
             if i == 0 {
-                computer.new_channel(&[setting[0], 0])
+                Rc::new(RefCell::new(Channel::new(&[setting[0], 0])))
             } else {
-                computer.new_channel(&setting[i..(i + 1)])
+                Rc::new(RefCell::new(Channel::new(&setting[i..(i + 1)])))
             }
         })
         .collect::<Vec<_>>();
     let mut amp_procs = (0..amp_count)
-        .map(|i| computer.new_proc(int_code, amp_channels[i], amp_channels[(i + 1) % amp_count]))
+        .map(|i| {
+            computer.new_proc(
+                int_code,
+                amp_channels[i].clone(),
+                amp_channels[(i + 1) % amp_count].clone(),
+            )
+        })
         .collect::<Vec<_>>();
 
     computer
@@ -164,8 +182,11 @@ pub fn amp_loop(
             {
                 Err(Error::AmplifierInLoopStuck)
             } else {
-                res.output(amp_channels[0])
-                    .and_then(|output| output.first().copied())
+                amp_channels[0]
+                    .borrow()
+                    .data()
+                    .get(0)
+                    .copied()
                     .ok_or(Error::EmptyOutputFromAmplifierLoop)
             }
         })

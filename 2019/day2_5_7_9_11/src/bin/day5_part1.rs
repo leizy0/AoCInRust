@@ -1,4 +1,9 @@
-use day2_5_7_9_11::int_code::{com::IntCodeComputer, read_int_code};
+use std::{cell::RefCell, rc::Rc};
+
+use day2_5_7_9_11::int_code::{
+    com::{Channel, IntCodeComputer},
+    read_int_code,
+};
 
 fn main() {
     let int_code_file = "day5_inputs.txt";
@@ -7,12 +12,13 @@ fn main() {
         int_code_file
     ));
     let mut computer = IntCodeComputer::new(false);
-    let code_inputs = vec![1];
-    match computer.execute(int_code, code_inputs) {
+    let input_chan = Rc::new(RefCell::new(Channel::new(&[1])));
+    let output_chan = Rc::new(RefCell::new(Channel::new(&[])));
+    match computer.execute_with_io(&int_code, input_chan, output_chan.clone()) {
         Ok(res) => println!(
             "After {} steps, execution finished, Outputs: {:?}",
             res.step_count(),
-            res.outputs()
+            output_chan.borrow().data()
         ),
         Err(e) => eprintln!("Failed to execute int code, get error({})", e),
     }

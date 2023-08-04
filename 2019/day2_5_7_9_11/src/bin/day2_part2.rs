@@ -1,4 +1,9 @@
-use day2_5_7_9_11::int_code::{com::IntCodeComputer, read_int_code};
+use std::{cell::RefCell, rc::Rc};
+
+use day2_5_7_9_11::int_code::{
+    com::{Channel, IntCodeComputer},
+    read_int_code,
+};
 
 fn main() {
     let int_code_file = "day2_inputs.txt";
@@ -11,7 +16,9 @@ fn main() {
             let mut int_code_image = int_code.clone();
             int_code_image[1] = code1;
             int_code_image[2] = code2;
-            match computer.execute(int_code_image, Vec::new()) {
+            let input_chan = Rc::new(RefCell::new(Channel::new(&[])));
+            let output_chan = Rc::new(RefCell::new(Channel::new(&[])));
+            match computer.execute_with_io(&int_code_image, input_chan, output_chan) {
                 Ok(res) => println!(
                     "{:>2} | {:>2}: After {} steps, program halts, code[0] = {}",
                     code1,
