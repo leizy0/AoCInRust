@@ -1,7 +1,5 @@
-use std::{cell::RefCell, rc::Rc};
-
 use day2_5_7_9_11::int_code::{
-    com::{Channel, IntCodeComputer},
+    com::{Channel, InputDevice, IntCodeComputer, OutputDevice},
     read_int_code,
 };
 
@@ -12,9 +10,9 @@ fn main() {
     int_code[1] = 12;
     int_code[2] = 2;
     let mut computer = IntCodeComputer::new(false);
-    let input_chan = Rc::new(RefCell::new(Channel::new(&[])));
-    let output_chan = Rc::new(RefCell::new(Channel::new(&[])));
-    match computer.execute_with_io(&int_code, input_chan, output_chan) {
+    let input_dev = InputDevice::new(Channel::new(&[]));
+    let output_dev = OutputDevice::new(Channel::new(&[]));
+    match computer.execute_with_io(&int_code, input_dev, output_dev) {
         Ok(res) => println!(
             "After {} steps, program halt, code[0] = {}",
             res.step_count(),

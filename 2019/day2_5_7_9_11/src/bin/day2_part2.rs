@@ -1,7 +1,5 @@
-use std::{cell::RefCell, rc::Rc};
-
 use day2_5_7_9_11::int_code::{
-    com::{Channel, IntCodeComputer},
+    com::{Channel, InputDevice, IntCodeComputer, OutputDevice},
     read_int_code,
 };
 
@@ -16,9 +14,9 @@ fn main() {
             let mut int_code_image = int_code.clone();
             int_code_image[1] = code1;
             int_code_image[2] = code2;
-            let input_chan = Rc::new(RefCell::new(Channel::new(&[])));
-            let output_chan = Rc::new(RefCell::new(Channel::new(&[])));
-            match computer.execute_with_io(&int_code_image, input_chan, output_chan) {
+            let input_dev = InputDevice::new(Channel::new(&[]));
+            let output_dev = OutputDevice::new(Channel::new(&[]));
+            match computer.execute_with_io(&int_code_image, input_dev, output_dev) {
                 Ok(res) => println!(
                     "{:>2} | {:>2}: After {} steps, program halts, code[0] = {}",
                     code1,

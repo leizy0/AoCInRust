@@ -1,7 +1,5 @@
-use std::{cell::RefCell, rc::Rc};
-
 use day2_5_7_9_11::int_code::{
-    com::{Channel, IntCodeComputer},
+    com::{Channel, InputDevice, IntCodeComputer, OutputDevice},
     read_int_code,
 };
 
@@ -12,14 +10,16 @@ fn main() {
         int_code_file
     ));
     let mut computer = IntCodeComputer::new(false);
-    let input_chan = Rc::new(RefCell::new(Channel::new(&[5])));
-    let output_chan = Rc::new(RefCell::new(Channel::new(&[])));
-    match computer.execute_with_io(&int_code, input_chan, output_chan.clone()) {
-        Ok(res) => println!(
-            "After {} steps, execution finished, Outputs: {:?}",
-            res.step_count(),
-            output_chan.borrow().data()
-        ),
+    let input_dev = InputDevice::new(Channel::new(&[5]));
+    let output_dev = OutputDevice::new(Channel::new(&[]));
+    match computer.execute_with_io(&int_code, input_dev, output_dev.clone()) {
+        Ok(res) => output_dev.check(|c| {
+            println!(
+                "After {} steps, execution finished, Outputs: {:?}",
+                res.step_count(),
+                c.data()
+            )
+        }),
         Err(e) => eprintln!("Failed to execute int code, get error({})", e),
     }
 }
