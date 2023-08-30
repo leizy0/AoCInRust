@@ -1,6 +1,8 @@
-use std::{cell::RefCell, fmt::Display, rc::Rc};
+use std::fmt::Display;
 
-use crate::int_code::com::{Channel, IntCodeComputer, ProcessState};
+use crate::int_code::com::{
+    Channel, IODevice, InputDevice, IntCodeComputer, OutputDevice, ProcessState,
+};
 
 pub struct AmpSettings {
     settings: Vec<Vec<i64>>,
@@ -125,22 +127,22 @@ pub fn amp_chain(
     let mut amp_res = 0;
     for i in 0..settings.len() {
         let image = Vec::from(int_code);
-        let input_chan = Rc::new(RefCell::new(Channel::new(&[settings[i], amp_res])));
-        let output_chan = Rc::new(RefCell::new(Channel::new(&[])));
+        let input_dev = InputDevice::new(Channel::new(&[settings[i], amp_res]));
+        let output_dev = OutputDevice::new(Channel::new(&[]));
         let res = computer
-            .execute_with_io(&image, input_chan.clone(), output_chan.clone())
+            .execute_with_io(&image, input_dev, output_dev.clone())
             .map_err(|e| Error::ExecutionError(e, Vec::from(settings)))?;
 
         if res.state() != ProcessState::Halt {
             return Err(Error::ProcessBlockInChain(i));
         }
 
-        amp_res = output_chan
-            .borrow()
-            .data()
-            .get(0)
-            .cloned()
-            .ok_or(Error::EmptyAmplifierResult(Vec::from(settings)))?;
+        amp_res = output_dev.check(|c| {
+            c.data()
+                .get(0)
+                .cloned()
+                .ok_or(Error::EmptyAmplifierResult(Vec::from(settings)))
+        })?;
     }
 
     Ok(amp_res)
@@ -152,12 +154,12 @@ pub fn amp_loop(
     setting: &[i64],
 ) -> Result<i64, Error> {
     let amp_count = setting.len();
-    let amp_channels = (0..amp_count)
+    let amp_io_devs = (0..amp_count)
         .map(|i| {
             if i == 0 {
-                Rc::new(RefCell::new(Channel::new(&[setting[0], 0])))
+                IODevice::new(Channel::new(&[setting[0], 0]))
             } else {
-                Rc::new(RefCell::new(Channel::new(&setting[i..(i + 1)])))
+                IODevice::new(Channel::new(&setting[i..(i + 1)]))
             }
         })
         .collect::<Vec<_>>();
@@ -165,8 +167,8 @@ pub fn amp_loop(
         .map(|i| {
             computer.new_proc(
                 int_code,
-                amp_channels[i].clone(),
-                amp_channels[(i + 1) % amp_count].clone(),
+                amp_io_devs[i].input_device(),
+                amp_io_devs[(i + 1) % amp_count].output_device(),
             )
         })
         .collect::<Vec<_>>();
@@ -182,12 +184,12 @@ pub fn amp_loop(
             {
                 Err(Error::AmplifierInLoopStuck)
             } else {
-                amp_channels[0]
-                    .borrow()
-                    .data()
-                    .get(0)
-                    .copied()
-                    .ok_or(Error::EmptyOutputFromAmplifierLoop)
+                amp_io_devs[0].check(|c| {
+                    c.data()
+                        .get(0)
+                        .copied()
+                        .ok_or(Error::EmptyOutputFromAmplifierLoop)
+                })
             }
         })
 }

@@ -1,6 +1,7 @@
 use std::{
     cell::RefCell,
     collections::{HashMap, VecDeque},
+    ops::{Deref, DerefMut},
     rc::Rc,
 };
 
@@ -31,6 +32,150 @@ pub trait OutputPort {
     fn wait_proc_id(&self) -> Option<usize>;
 }
 
+pub trait IOPort: InputPort + OutputPort {}
+impl<T: InputPort + OutputPort> IOPort for T {}
+
+type Ref<T> = Rc<RefCell<T>>;
+type InputPortRef = Ref<dyn InputPort>;
+type OutputPortRef = Ref<dyn OutputPort>;
+type IOPortRef = Ref<dyn IOPort>;
+
+pub struct InputDevice<P: InputPort + 'static> {
+    inner: Ref<P>,
+    input_port: InputPortRef,
+}
+
+impl<P: InputPort + 'static> Clone for InputDevice<P> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+            input_port: self.input_port.clone(),
+        }
+    }
+}
+
+impl<P: InputPort + 'static> InputDevice<P> {
+    pub fn new(port: P) -> Self {
+        let port = Rc::new(RefCell::new(port));
+        Self {
+            inner: port.clone(),
+            input_port: port.clone(),
+        }
+    }
+
+    pub fn check<F, U>(&self, f: F) -> U
+    where
+        F: FnOnce(&P) -> U,
+    {
+        f(self.inner.borrow().deref())
+    }
+
+    pub fn tweak<F, U>(&self, f: F) -> U
+    where
+        F: FnOnce(&mut P) -> U,
+    {
+        f(self.inner.borrow_mut().deref_mut())
+    }
+
+    fn input_port(&self) -> Ref<dyn InputPort> {
+        self.input_port.clone()
+    }
+}
+
+pub struct OutputDevice<P: OutputPort + 'static> {
+    inner: Ref<P>,
+    output_port: OutputPortRef,
+}
+
+impl<P: OutputPort + 'static> Clone for OutputDevice<P> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+            output_port: self.output_port.clone(),
+        }
+    }
+}
+
+impl<P: OutputPort + 'static> OutputDevice<P> {
+    pub fn new(port: P) -> Self {
+        let port = Rc::new(RefCell::new(port));
+        Self {
+            inner: port.clone(),
+            output_port: port.clone(),
+        }
+    }
+
+    pub fn check<F, U>(&self, f: F) -> U
+    where
+        F: FnOnce(&P) -> U,
+    {
+        f(self.inner.borrow().deref())
+    }
+
+    pub fn tweak<F, U>(&self, f: F) -> U
+    where
+        F: FnOnce(&mut P) -> U,
+    {
+        f(self.inner.borrow_mut().deref_mut())
+    }
+
+    fn output_port(&self) -> Ref<dyn OutputPort> {
+        self.output_port.clone()
+    }
+}
+
+pub struct IODevice<P: IOPort + 'static> {
+    inner: Ref<P>,
+    io_port: IOPortRef,
+}
+
+impl<P: IOPort + 'static> Clone for IODevice<P> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+            io_port: self.io_port.clone(),
+        }
+    }
+}
+
+impl<P: IOPort + 'static> IODevice<P> {
+    pub fn new(port: P) -> Self {
+        let port = Rc::new(RefCell::new(port));
+        Self {
+            inner: port.clone(),
+            io_port: port.clone(),
+        }
+    }
+
+    pub fn check<F, U>(&self, f: F) -> U
+    where
+        F: FnOnce(&P) -> U,
+    {
+        f(self.inner.borrow().deref())
+    }
+
+    pub fn tweak<F, U>(&self, f: F) -> U
+    where
+        F: FnOnce(&mut P) -> U,
+    {
+        f(self.inner.borrow_mut().deref_mut())
+    }
+
+    pub fn input_device(&self) -> InputDevice<P> {
+        InputDevice {
+            inner: self.inner.clone(),
+            input_port: self.inner.clone(),
+        }
+    }
+
+    pub fn output_device(&self) -> OutputDevice<P> {
+        OutputDevice {
+            inner: self.inner.clone(),
+            output_port: self.inner.clone(),
+        }
+    }
+}
+
 pub struct IntCodeComputer {
     pub enable_debug_output: bool,
     processes: Vec<Option<Process>>,
@@ -44,26 +189,17 @@ impl IntCodeComputer {
         }
     }
 
-    // pub fn execute(&mut self, image: Vec<i64>, inputs: Vec<i64>) -> Result<ExecutionResult, Error> {
-    //     let input_chan_id = self.new_channel(&inputs);
-    //     let output_chan_id = self.new_channel(&[]);
-    //     let proc_id = self.new_proc(&image, input_chan_id, output_chan_id);
-
-    //     self.exe_procs(&[proc_id], proc_id)
-    //         .and_then(|mut proc_res| {
-    //             proc_res
-    //                 .extract(proc_id, output_chan_id)
-    //                 .ok_or(Error::ProcessResultNotFound(proc_id, output_chan_id))
-    //         })
-    // }
-
-    pub fn execute_with_io(
+    pub fn execute_with_io<ID, OD>(
         &mut self,
         image: &[i64],
-        input_port: Rc<RefCell<dyn InputPort>>,
-        output_port: Rc<RefCell<dyn OutputPort>>,
-    ) -> Result<ProcessResult, Error> {
-        let proc_id = self.new_proc(&image, input_port, output_port);
+        input_dev: InputDevice<ID>,
+        output_dev: OutputDevice<OD>,
+    ) -> Result<ProcessResult, Error>
+    where
+        ID: InputPort,
+        OD: OutputPort,
+    {
+        let proc_id = self.new_proc(&image, input_dev, output_dev);
         loop {
             self.exe_proc(proc_id)?;
             let state = self.proc(proc_id).unwrap().state;
@@ -110,7 +246,7 @@ impl IntCodeComputer {
         }
     }
 
-    pub fn exe_proc(&mut self, cur_proc_id: usize) -> Result<(), Error> {
+    fn exe_proc(&mut self, cur_proc_id: usize) -> Result<(), Error> {
         self.proc_mut(cur_proc_id)
             .ok_or(Error::RunningUnknownProcess(cur_proc_id))?;
 
@@ -162,13 +298,17 @@ impl IntCodeComputer {
         Ok(())
     }
 
-    pub fn new_proc(
+    pub fn new_proc<ID, OD>(
         &mut self,
         int_code: &[i64],
-        input_port: Rc<RefCell<dyn InputPort>>,
-        output_port: Rc<RefCell<dyn OutputPort>>,
-    ) -> usize {
-        let proc = Process::new(int_code, input_port.clone(), output_port);
+        input_dev: InputDevice<ID>,
+        output_dev: OutputDevice<OD>,
+    ) -> usize
+    where
+        ID: InputPort,
+        OD: OutputPort,
+    {
+        let proc = Process::new(int_code, input_dev.input_port(), output_dev.output_port());
         let mut exist_slot_id = None;
         for (i, slot) in self.processes.iter_mut().enumerate() {
             if slot.is_none() {
@@ -187,7 +327,7 @@ impl IntCodeComputer {
                 self.processes.len() - 1
             }
         };
-        input_port.borrow_mut().reg_proc(id);
+        input_dev.input_port().borrow_mut().reg_proc(id);
 
         id
     }
@@ -300,18 +440,14 @@ struct Process {
     state: ProcessState,
     inst_p: usize,
     mem: Vec<i64>,
-    input_port: Rc<RefCell<dyn InputPort>>,
-    output_port: Rc<RefCell<dyn OutputPort>>,
+    input_port: InputPortRef,
+    output_port: OutputPortRef,
     step_count: usize,
     rel_base: i64,
 }
 
 impl Process {
-    fn new(
-        image: &[i64],
-        input_port: Rc<RefCell<dyn InputPort>>,
-        output_port: Rc<RefCell<dyn OutputPort>>,
-    ) -> Self {
+    fn new(image: &[i64], input_port: InputPortRef, output_port: OutputPortRef) -> Self {
         Process {
             state: ProcessState::Ready,
             inst_p: 0,

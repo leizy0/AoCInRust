@@ -1,7 +1,8 @@
-use std::{cell::RefCell, rc::Rc};
-
 use day2_5_7_9_11::{
-    int_code::{com::IntCodeComputer, read_int_code},
+    int_code::{
+        com::{IODevice, IntCodeComputer},
+        read_int_code,
+    },
     paint::{PaintRobot, PaintSimulator},
 };
 
@@ -18,20 +19,24 @@ fn main() {
         }
     };
 
-    let simulator = Rc::new(RefCell::new(PaintSimulator::new(PaintRobot::new())));
+    let io_dev = IODevice::new(PaintSimulator::new(PaintRobot::new()));
     let mut computer = IntCodeComputer::new(true);
-    match computer.execute_with_io(&int_code, simulator.clone(), simulator.clone()) {
-        Ok(res) => println!(
-            "After {} steps, painting program halt, get outputs({:?})",
-            res.step_count(),
-            simulator.borrow().outputs()
-        ),
+    match computer.execute_with_io(&int_code, io_dev.input_device(), io_dev.output_device()) {
+        Ok(res) => io_dev.check(|ps| {
+            println!(
+                "After {} steps, painting program halt, get outputs({:?})",
+                res.step_count(),
+                ps.outputs()
+            )
+        }),
         Err(e) => eprintln!("Failed to run painting program, get error({})", e),
     };
 
-    println!(
-        "In whole painting process, robot has painted {} times and {} blocks",
-        simulator.borrow().robot().paint_count(),
-        simulator.borrow().robot().block_count()
-    );
+    io_dev.check(|ps| {
+        println!(
+            "In whole painting process, robot has painted {} times and {} blocks",
+            ps.robot().paint_count(),
+            ps.robot().block_count()
+        );
+    });
 }
