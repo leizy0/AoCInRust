@@ -183,455 +183,160 @@ fn parse_opcode_ind(opcode: i64) -> Result<u32, Error> {
     }
 }
 
-#[derive(Debug, Default)]
-pub struct Add {
-    params: [i64; 3],
-    param_modes: [ParameterMode; 3],
-}
-
-impl Instruction for Add {
-    #[inline]
-    fn length(&self) -> usize {
-        4
-    }
-
-    #[inline]
-    fn opcode_ind(&self) -> u32 {
-        InstOpcodeInd::Add.int_value()
-    }
-
-    fn params(&self) -> &[i64] {
-        &self.params
-    }
-
-    fn params_mut(&mut self) -> &mut [i64] {
-        &mut self.params
-    }
-
-    fn param_modes(&self) -> &[ParameterMode] {
-        &self.param_modes
-    }
-
-    fn param_modes_mut(&mut self) -> &mut [ParameterMode] {
-        &mut self.param_modes
-    }
-
-    fn execute(&self, exe_state: &mut dyn ExecutionState) -> Result<(), Error> {
-        let input0 = Self::read_mem(exe_state, self.params[0], self.param_modes[0])?;
-        let input1 = Self::read_mem(exe_state, self.params[1], self.param_modes[1])?;
-        Self::write_mem(
-            exe_state,
-            self.params[2],
-            self.param_modes[2],
-            input0 + input1,
-        )?;
-        self.forward_inst_p(exe_state);
-
-        Ok(())
-    }
-}
-
-#[derive(Debug, Default)]
-pub struct Multiply {
-    params: [i64; 3],
-    param_modes: [ParameterMode; 3],
-}
-
-impl Instruction for Multiply {
-    #[inline]
-    fn length(&self) -> usize {
-        4
-    }
-
-    #[inline]
-    fn opcode_ind(&self) -> u32 {
-        InstOpcodeInd::Multiply.int_value()
-    }
-
-    fn params(&self) -> &[i64] {
-        &self.params
-    }
-
-    fn params_mut(&mut self) -> &mut [i64] {
-        &mut self.params
-    }
-
-    fn param_modes(&self) -> &[ParameterMode] {
-        &self.param_modes
-    }
-
-    fn param_modes_mut(&mut self) -> &mut [ParameterMode] {
-        &mut self.param_modes
-    }
-
-    fn execute(&self, exe_state: &mut dyn ExecutionState) -> Result<(), Error> {
-        let input0 = Self::read_mem(exe_state, self.params[0], self.param_modes[0])?;
-        let input1 = Self::read_mem(exe_state, self.params[1], self.param_modes[1])?;
-        Self::write_mem(
-            exe_state,
-            self.params[2],
-            self.param_modes[2],
-            input0 * input1,
-        )?;
-        self.forward_inst_p(exe_state);
-
-        Ok(())
-    }
-}
-
-#[derive(Debug, Default)]
-pub struct Halt {
-    params: [i64; 0],
-    param_modes: [ParameterMode; 0],
-}
-
-impl Instruction for Halt {
-    #[inline]
-    fn length(&self) -> usize {
-        1
-    }
-
-    #[inline]
-    fn opcode_ind(&self) -> u32 {
-        InstOpcodeInd::Halt.int_value()
-    }
-
-    fn params(&self) -> &[i64] {
-        &self.params
-    }
-
-    fn params_mut(&mut self) -> &mut [i64] {
-        &mut self.params
-    }
-
-    fn param_modes(&self) -> &[ParameterMode] {
-        &self.param_modes
-    }
-
-    fn param_modes_mut(&mut self) -> &mut [ParameterMode] {
-        &mut self.param_modes
-    }
-
-    fn execute(&self, exe_state: &mut dyn ExecutionState) -> Result<(), Error> {
-        exe_state.halt();
-        self.forward_inst_p(exe_state);
-
-        Ok(())
-    }
-}
-
-#[derive(Debug, Default)]
-pub struct Input {
-    params: [i64; 1],
-    param_modes: [ParameterMode; 1],
-}
-
-impl Instruction for Input {
-    #[inline]
-    fn length(&self) -> usize {
-        2
-    }
-
-    #[inline]
-    fn opcode_ind(&self) -> u32 {
-        InstOpcodeInd::Input.int_value()
-    }
-
-    fn params(&self) -> &[i64] {
-        &self.params
-    }
-
-    fn params_mut(&mut self) -> &mut [i64] {
-        &mut self.params
-    }
-
-    fn param_modes(&self) -> &[ParameterMode] {
-        &self.param_modes
-    }
-
-    fn param_modes_mut(&mut self) -> &mut [ParameterMode] {
-        &mut self.param_modes
-    }
-
-    fn execute(&self, exe_state: &mut dyn ExecutionState) -> Result<(), Error> {
-        let input = exe_state.input().ok_or(Error::NotEnoughInput)?;
-        Self::write_mem(exe_state, self.params[0], self.param_modes[0], input)?;
-        self.forward_inst_p(exe_state);
-
-        Ok(())
-    }
-}
-
-#[derive(Debug, Default)]
-pub struct Output {
-    params: [i64; 1],
-    param_modes: [ParameterMode; 1],
-}
-
-impl Instruction for Output {
-    #[inline]
-    fn length(&self) -> usize {
-        2
-    }
-
-    #[inline]
-    fn opcode_ind(&self) -> u32 {
-        InstOpcodeInd::Output.int_value()
-    }
-
-    fn params(&self) -> &[i64] {
-        &self.params
-    }
-
-    fn params_mut(&mut self) -> &mut [i64] {
-        &mut self.params
-    }
-
-    fn param_modes(&self) -> &[ParameterMode] {
-        &self.param_modes
-    }
-
-    fn param_modes_mut(&mut self) -> &mut [ParameterMode] {
-        &mut self.param_modes
-    }
-
-    fn execute(&self, exe_state: &mut dyn ExecutionState) -> Result<(), Error> {
-        let value = Self::read_mem(exe_state, self.params[0], self.param_modes[0])?;
-        exe_state.output(value)?;
-        self.forward_inst_p(exe_state);
-
-        Ok(())
-    }
-}
-
-#[derive(Debug, Default)]
-pub struct JumpIfTrue {
-    params: [i64; 2],
-    param_modes: [ParameterMode; 2],
-}
-
-impl Instruction for JumpIfTrue {
-    #[inline]
-    fn length(&self) -> usize {
-        3
-    }
-
-    #[inline]
-    fn opcode_ind(&self) -> u32 {
-        InstOpcodeInd::JumpIfTrue.int_value()
-    }
-
-    fn params(&self) -> &[i64] {
-        &self.params
-    }
-
-    fn params_mut(&mut self) -> &mut [i64] {
-        &mut self.params
-    }
-
-    fn param_modes(&self) -> &[ParameterMode] {
-        &self.param_modes
-    }
-
-    fn param_modes_mut(&mut self) -> &mut [ParameterMode] {
-        &mut self.param_modes
-    }
-
-    fn execute(&self, exe_state: &mut dyn ExecutionState) -> Result<(), Error> {
-        let condition = Self::read_mem(exe_state, self.params[0], self.param_modes[0])?;
-        if condition != 0 {
-            let target = Self::read_mem(exe_state, self.params[1], self.param_modes[1])?;
-            *exe_state.inst_p_mut() =
-                usize::try_from(target).map_err(|_| Error::InvalidJumpTarget(target))?;
-        } else {
-            self.forward_inst_p(exe_state);
+macro_rules! def_instruction {
+    (name=$name:ident, length=$length:literal, index=$opcode_ind:expr; execute($inst_var:ident, $exe_var:ident) => $exe_block:block) => {
+        #[derive(Debug, Default)]
+        pub struct $name {
+            params: [i64; $length - 1],
+            param_modes: [ParameterMode; $length - 1],
         }
 
-        Ok(())
-    }
-}
+        impl Instruction for $name {
+            #[inline]
+            fn length(&self) -> usize {
+                $length
+            }
 
-#[derive(Debug, Default)]
-pub struct JumpIfFalse {
-    params: [i64; 2],
-    param_modes: [ParameterMode; 2],
-}
+            #[inline]
+            fn opcode_ind(&self) -> u32 {
+                $opcode_ind
+            }
 
-impl Instruction for JumpIfFalse {
-    #[inline]
-    fn length(&self) -> usize {
-        3
-    }
+            fn params(&self) -> &[i64] {
+                &self.params
+            }
 
-    #[inline]
-    fn opcode_ind(&self) -> u32 {
-        InstOpcodeInd::JumpIfFalse.int_value()
-    }
+            fn params_mut(&mut self) -> &mut [i64] {
+                &mut self.params
+            }
 
-    fn params(&self) -> &[i64] {
-        &self.params
-    }
+            fn param_modes(&self) -> &[ParameterMode] {
+                &self.param_modes
+            }
 
-    fn params_mut(&mut self) -> &mut [i64] {
-        &mut self.params
-    }
+            fn param_modes_mut(&mut self) -> &mut [ParameterMode] {
+                &mut self.param_modes
+            }
 
-    fn param_modes(&self) -> &[ParameterMode] {
-        &self.param_modes
-    }
+            fn execute(&self, exe_state: &mut dyn ExecutionState) -> Result<(), Error> {
+                let $inst_var = self;
+                let $exe_var = exe_state;
 
-    fn param_modes_mut(&mut self) -> &mut [ParameterMode] {
-        &mut self.param_modes
-    }
-
-    fn execute(&self, exe_state: &mut dyn ExecutionState) -> Result<(), Error> {
-        let condition = Self::read_mem(exe_state, self.params[0], self.param_modes[0])?;
-        if condition == 0 {
-            let target = Self::read_mem(exe_state, self.params[1], self.param_modes[1])?;
-            *exe_state.inst_p_mut() =
-                usize::try_from(target).map_err(|_| Error::InvalidJumpTarget(target))?;
-        } else {
-            self.forward_inst_p(exe_state);
+                $exe_block
+            }
         }
-
-        Ok(())
-    }
+    };
 }
 
-#[derive(Debug, Default)]
-pub struct LessThan {
-    params: [i64; 3],
-    param_modes: [ParameterMode; 3],
-}
+def_instruction!(name=Add, length=4, index=InstOpcodeInd::Add.int_value(); execute(inst, exe_state) => {
+    let input0 = Self::read_mem(exe_state, inst.params[0], inst.param_modes[0])?;
+    let input1 = Self::read_mem(exe_state, inst.params[1], inst.param_modes[1])?;
+    Self::write_mem(
+        exe_state,
+        inst.params[2],
+        inst.param_modes[2],
+        input0 + input1,
+    )?;
+    inst.forward_inst_p(exe_state);
 
-impl Instruction for LessThan {
-    #[inline]
-    fn length(&self) -> usize {
-        4
+    Ok(())
+});
+
+def_instruction!(name=Multiply, length=4, index=InstOpcodeInd::Multiply.int_value(); execute(inst, exe_state) => {
+    let input0 = Self::read_mem(exe_state, inst.params[0], inst.param_modes[0])?;
+    let input1 = Self::read_mem(exe_state, inst.params[1], inst.param_modes[1])?;
+    Self::write_mem(
+        exe_state,
+        inst.params[2],
+        inst.param_modes[2],
+        input0 * input1,
+    )?;
+    inst.forward_inst_p(exe_state);
+
+    Ok(())
+});
+
+def_instruction!(name=Halt, length=1, index=InstOpcodeInd::Halt.int_value(); execute(inst, exe_state) => {
+    exe_state.halt();
+    inst.forward_inst_p(exe_state);
+
+    Ok(())
+});
+
+def_instruction!(name=Input, length=2, index=InstOpcodeInd::Input.int_value(); execute(inst, exe_state) => {
+    let input = exe_state.input().ok_or(Error::NotEnoughInput)?;
+    Self::write_mem(exe_state, inst.params[0], inst.param_modes[0], input)?;
+    inst.forward_inst_p(exe_state);
+
+    Ok(())
+});
+
+def_instruction!(name=Output, length=2, index=InstOpcodeInd::Output.int_value(); execute(inst, exe_state) => {
+    let value = Self::read_mem(exe_state, inst.params[0], inst.param_modes[0])?;
+    exe_state.output(value)?;
+    inst.forward_inst_p(exe_state);
+
+    Ok(())
+});
+
+def_instruction!(name=JumpIfTrue, length=3, index=InstOpcodeInd::JumpIfTrue.int_value(); execute(inst, exe_state) => {
+    let condition = Self::read_mem(exe_state, inst.params[0], inst.param_modes[0])?;
+    if condition != 0 {
+        let target = Self::read_mem(exe_state, inst.params[1], inst.param_modes[1])?;
+        *exe_state.inst_p_mut() =
+            usize::try_from(target).map_err(|_| Error::InvalidJumpTarget(target))?;
+    } else {
+        inst.forward_inst_p(exe_state);
     }
 
-    #[inline]
-    fn opcode_ind(&self) -> u32 {
-        InstOpcodeInd::LessThan.int_value()
+    Ok(())
+});
+
+def_instruction!(name=JumpIfFalse, length=3, index=InstOpcodeInd::JumpIfFalse.int_value(); execute(inst, exe_state) => {
+    let condition = Self::read_mem(exe_state, inst.params[0], inst.param_modes[0])?;
+    if condition == 0 {
+        let target = Self::read_mem(exe_state, inst.params[1], inst.param_modes[1])?;
+        *exe_state.inst_p_mut() =
+            usize::try_from(target).map_err(|_| Error::InvalidJumpTarget(target))?;
+    } else {
+        inst.forward_inst_p(exe_state);
     }
 
-    fn params(&self) -> &[i64] {
-        &self.params
-    }
+    Ok(())
+});
 
-    fn params_mut(&mut self) -> &mut [i64] {
-        &mut self.params
-    }
+def_instruction!(name=LessThan, length=4, index=InstOpcodeInd::LessThan.int_value(); execute(inst, exe_state) => {
+    let input0 = Self::read_mem(exe_state, inst.params[0], inst.param_modes[0])?;
+    let input1 = Self::read_mem(exe_state, inst.params[1], inst.param_modes[1])?;
+    Self::write_mem(
+        exe_state,
+        inst.params[2],
+        inst.param_modes[2],
+        if input0 < input1 { 1 } else { 0 },
+    )?;
+    inst.forward_inst_p(exe_state);
 
-    fn param_modes(&self) -> &[ParameterMode] {
-        &self.param_modes
-    }
+    Ok(())
+});
 
-    fn param_modes_mut(&mut self) -> &mut [ParameterMode] {
-        &mut self.param_modes
-    }
+def_instruction!(name=Equals, length=4, index=InstOpcodeInd::Equals.int_value(); execute(inst, exe_state) => {
+    let input0 = Self::read_mem(exe_state, inst.params[0], inst.param_modes[0])?;
+    let input1 = Self::read_mem(exe_state, inst.params[1], inst.param_modes[1])?;
+    Self::write_mem(
+        exe_state,
+        inst.params[2],
+        inst.param_modes[2],
+        if input0 == input1 { 1 } else { 0 },
+    )?;
+    inst.forward_inst_p(exe_state);
 
-    fn execute(&self, exe_state: &mut dyn ExecutionState) -> Result<(), Error> {
-        let input0 = Self::read_mem(exe_state, self.params[0], self.param_modes[0])?;
-        let input1 = Self::read_mem(exe_state, self.params[1], self.param_modes[1])?;
-        Self::write_mem(
-            exe_state,
-            self.params[2],
-            self.param_modes[2],
-            if input0 < input1 { 1 } else { 0 },
-        )?;
-        self.forward_inst_p(exe_state);
+    Ok(())
+});
 
-        Ok(())
-    }
-}
+def_instruction!(name=AdjustRelativeBase, length=2, index=InstOpcodeInd::AdjustRelativeBase.int_value(); execute(inst, exe_state) => {
+    let offset = Self::read_mem(exe_state, inst.params[0], inst.param_modes[0])?;
+    *exe_state.rel_base_mut() += offset;
+    inst.forward_inst_p(exe_state);
 
-#[derive(Debug, Default)]
-pub struct Equals {
-    params: [i64; 3],
-    param_modes: [ParameterMode; 3],
-}
-
-impl Instruction for Equals {
-    #[inline]
-    fn length(&self) -> usize {
-        4
-    }
-
-    #[inline]
-    fn opcode_ind(&self) -> u32 {
-        InstOpcodeInd::Equals.int_value()
-    }
-
-    fn params(&self) -> &[i64] {
-        &self.params
-    }
-
-    fn params_mut(&mut self) -> &mut [i64] {
-        &mut self.params
-    }
-
-    fn param_modes(&self) -> &[ParameterMode] {
-        &self.param_modes
-    }
-
-    fn param_modes_mut(&mut self) -> &mut [ParameterMode] {
-        &mut self.param_modes
-    }
-
-    fn execute(&self, exe_state: &mut dyn ExecutionState) -> Result<(), Error> {
-        let input0 = Self::read_mem(exe_state, self.params[0], self.param_modes[0])?;
-        let input1 = Self::read_mem(exe_state, self.params[1], self.param_modes[1])?;
-        Self::write_mem(
-            exe_state,
-            self.params[2],
-            self.param_modes[2],
-            if input0 == input1 { 1 } else { 0 },
-        )?;
-        self.forward_inst_p(exe_state);
-
-        Ok(())
-    }
-}
-
-#[derive(Debug, Default)]
-pub struct AdjustRelativeBase {
-    params: [i64; 1],
-    param_modes: [ParameterMode; 1],
-}
-
-impl Instruction for AdjustRelativeBase {
-    #[inline]
-    fn length(&self) -> usize {
-        2
-    }
-
-    #[inline]
-    fn opcode_ind(&self) -> u32 {
-        InstOpcodeInd::AdjustRelativeBase.int_value()
-    }
-
-    fn params(&self) -> &[i64] {
-        &self.params
-    }
-
-    fn params_mut(&mut self) -> &mut [i64] {
-        &mut self.params
-    }
-
-    fn param_modes(&self) -> &[ParameterMode] {
-        &self.param_modes
-    }
-
-    fn param_modes_mut(&mut self) -> &mut [ParameterMode] {
-        &mut self.param_modes
-    }
-
-    fn execute(&self, exe_state: &mut dyn ExecutionState) -> Result<(), Error> {
-        let offset = Self::read_mem(exe_state, self.params[0], self.param_modes[0])?;
-        *exe_state.rel_base_mut() += offset;
-        self.forward_inst_p(exe_state);
-
-        Ok(())
-    }
-}
+    Ok(())
+});
