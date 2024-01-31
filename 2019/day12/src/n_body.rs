@@ -1,9 +1,9 @@
 use std::{
     fs::File,
     io::{BufRead, BufReader},
-    ops::{AddAssign, Neg, Sub},
+    ops::{AddAssign, Neg, Sub, Div},
     path::Path,
-    str::FromStr,
+    str::FromStr, iter::Sum,
 };
 
 use once_cell::sync::Lazy;
@@ -11,8 +11,8 @@ use regex::Regex;
 
 use crate::Error;
 
-#[derive(Debug, Default, Clone, Copy)]
-struct Vec3 {
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct Vec3 {
     v: [i32; 3],
 }
 
@@ -58,6 +58,25 @@ impl AddAssign<&Vec3> for Vec3 {
     }
 }
 
+impl Sum for Vec3 {
+    fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
+        let mut sum = Self::default();
+        for b in iter {
+            sum += b;
+        }
+
+        sum
+    }
+}
+
+impl Div<i32> for Vec3 {
+    type Output = Self;
+
+    fn div(self, rhs: i32) -> Self::Output {
+        Self::new(self.v[0] / rhs, self.v[1] / rhs, self.v[2] / rhs)
+    }
+}
+
 impl Vec3 {
     fn new(x: i32, y: i32, z: i32) -> Self {
         Self { v: [x, y, z] }
@@ -72,7 +91,7 @@ impl Vec3 {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Body {
     pos: Vec3,
     vel: Vec3,
@@ -167,6 +186,14 @@ impl NBodySimulator {
 
     pub fn total_energy(&self) -> u32 {
         self.bodies.iter().map(|b| b.total_energy()).sum()
+    }
+
+    pub fn center_pos(&self) -> Vec3 {
+        self.bodies.iter().map(|b| b.pos).sum::<Vec3>() / (self.bodies.len() as i32)
+    }
+
+    pub fn vel_sum(&self) -> Vec3 {
+        self.bodies.iter().map(|b| b.vel).sum::<Vec3>()
     }
 }
 
