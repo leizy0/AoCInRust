@@ -1,7 +1,7 @@
 use day12::n_body::{read_n_body, NBodySimulator};
 
 fn main() {
-    let input_path = "inputs.txt";
+    let input_path = "test_inputs1.txt";
     let init_bodies = match read_n_body(input_path) {
         Ok(v) => v,
         Err(e) => {
@@ -18,7 +18,7 @@ fn main() {
     let report_interval = 50000000;
 
     loop {
-        if (0..4).all(|i| simulator.bodies()[i] == init_bodies[i]) && step_count != 0 {
+        if (0..4).all(|i| simulator.nth_body(i) == init_bodies[i]) && step_count != 0 {
             println!("After {} step(s), initial state of bodies repeats.", step_count);
             break;
         }else if step_count % report_interval == 0 {

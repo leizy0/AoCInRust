@@ -19,8 +19,8 @@ fn main() {
     for i in 0..step_count {
         if i % report_interval == 0 {
             println!("After {} steps, n-body state is:", i);
-            for body in simulator.bodies() {
-                println!("{:?}", body);
+            for i in 0..simulator.body_count() {
+                println!("{:?}", simulator.nth_body(i));
             }
 
             println!(
