@@ -164,13 +164,15 @@ impl Body {
     }
 }
 
-#[cfg(not(feature = "use_avx2"))]
+#[cfg(not(any(feature = "use_avx2",
+    feature = "multithread")))]
 // General implementation
 pub struct NBodySimulator {
     bodies: Vec<Body>,
 }
 
-#[cfg(not(feature = "use_avx2"))]
+#[cfg(not(any(feature = "use_avx2",
+    feature = "multithread")))]
 impl NBodySimulator {
     pub fn new(bodies: Vec<Body>) -> Self {
         Self { bodies }
@@ -215,6 +217,108 @@ impl NBodySimulator {
 
     pub fn vel_sum(&self) -> Vec3 {
         self.bodies.iter().map(|b| b.vel).sum::<Vec3>()
+    }
+}
+
+#[cfg(feature = "multithread")]
+pub use multithread::NBodySimulator;
+
+#[cfg(feature = "multithread")]
+mod multithread {
+    use std::sync::{Arc, RwLock};
+
+    use super::{Body, Vec3};
+    use threadpool::ThreadPool;
+
+    // Implementation using multiple threads to update each dimension.
+    pub struct NBodySimulator {
+        pos_x: Arc<RwLock<Vec<i32>>>,
+        pos_y: Arc<RwLock<Vec<i32>>>,
+        pos_z: Arc<RwLock<Vec<i32>>>,
+        vel_x: Arc<RwLock<Vec<i32>>>,
+        vel_y: Arc<RwLock<Vec<i32>>>,
+        vel_z: Arc<RwLock<Vec<i32>>>,
+        thread_pool: ThreadPool,
+    }
+
+    impl NBodySimulator {
+        pub fn new(bodies: Vec<Body>) -> Self {
+            Self {
+                pos_x: Arc::new(RwLock::new(bodies.iter().map(|b| b.pos[0]).collect())),
+                pos_y: Arc::new(RwLock::new(bodies.iter().map(|b| b.pos[1]).collect())),
+                pos_z: Arc::new(RwLock::new(bodies.iter().map(|b| b.pos[2]).collect())),
+                vel_x: Arc::new(RwLock::new(bodies.iter().map(|b| b.vel[0]).collect())),
+                vel_y: Arc::new(RwLock::new(bodies.iter().map(|b| b.vel[1]).collect())),
+                vel_z: Arc::new(RwLock::new(bodies.iter().map(|b| b.vel[2]).collect())),
+                thread_pool: ThreadPool::new(4),
+            }
+        }
+
+        pub fn body_count(&self) -> usize {
+            self.pos_x.read().unwrap().len()
+        }
+
+        pub fn nth_body(&self, n: usize) -> Body {
+            Body {
+                pos: Vec3::new(self.pos_x.read().unwrap()[n], self.pos_y.read().unwrap()[n], self.pos_z.read().unwrap()[n]), 
+                vel: Vec3::new(self.vel_x.read().unwrap()[n], self.vel_y.read().unwrap()[n], self.vel_z.read().unwrap()[n]),
+            }
+        }
+
+        pub fn step(&mut self) {
+            let update = |pos_v: Arc<RwLock<Vec<i32>>>, vel_v: Arc<RwLock<Vec<i32>>>| {
+                let mut pos_v = pos_v.write().unwrap();
+                let mut vel_v = vel_v.write().unwrap();
+                let body_count = pos_v.len();
+                assert!(pos_v.len() == vel_v.len(), "Length of position vector and velocity vector should be equal");
+                for i in 0..body_count {
+                    for j in (i + 1)..body_count {
+                        let delta_vel = (pos_v[j] - pos_v[i]).signum();
+                        vel_v[i] += delta_vel;
+                        vel_v[j] -= delta_vel;
+                    }
+
+                    pos_v[i] += vel_v[i];
+                }
+            };
+
+            let pos_v = self.pos_x.clone();
+            let vel_v = self.vel_x.clone();
+            self.thread_pool.execute(move || { update(pos_v.clone(), vel_v.clone()) });
+            let pos_v = self.pos_y.clone();
+            let vel_v = self.vel_y.clone();
+            self.thread_pool.execute(move || { update(pos_v.clone(), vel_v.clone()) });
+            let pos_v = self.pos_z.clone();
+            let vel_v = self.vel_z.clone();
+            self.thread_pool.execute(move || { update(pos_v.clone(), vel_v.clone()) });
+
+            self.thread_pool.join();
+        }
+
+        pub fn potential_energy(&self) -> u32 {
+            (0..self.body_count()).into_iter().map(|i| self.nth_body(i).potential_energy()).sum()
+        }
+    
+        pub fn kinetic_energy(&self) -> u32 {
+            (0..self.body_count()).into_iter().map(|i| self.nth_body(i).kinetic_energy()).sum()
+        }
+    
+        pub fn total_energy(&self) -> u32 {
+            (0..self.body_count()).into_iter().map(|i| self.nth_body(i).total_energy()).sum()
+        }
+    
+        pub fn center_pos(&self) -> Vec3 {
+            let count = self.body_count();
+            Vec3::new(self.pos_x.read().unwrap().iter().sum::<i32>() / count as i32,
+                self.pos_y.read().unwrap().iter().sum::<i32>() / count as i32,
+                self.pos_z.read().unwrap().iter().sum::<i32>() / count as i32)
+        }
+    
+        pub fn vel_sum(&self) -> Vec3 {
+            Vec3::new(self.vel_x.read().unwrap().iter().sum(),
+                self.vel_y.read().unwrap().iter().sum(),
+                self.vel_z.read().unwrap().iter().sum())
+        }
     }
 }
 
