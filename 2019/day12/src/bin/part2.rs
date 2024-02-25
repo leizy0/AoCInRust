@@ -19,10 +19,16 @@ fn main() {
 
     loop {
         if (0..4).all(|i| simulator.nth_body(i) == init_bodies[i]) && step_count != 0 {
-            println!("After {} step(s), initial state of bodies repeats.", step_count);
+            println!(
+                "After {} step(s), initial state of bodies repeats.",
+                step_count
+            );
             break;
-        }else if step_count % report_interval == 0 {
-            println!("Initial state of bodies doesn't repeat after {} steps.", step_count);
+        } else if step_count % report_interval == 0 {
+            println!(
+                "Initial state of bodies doesn't repeat after {} steps.",
+                step_count
+            );
         }
 
         simulator.step();

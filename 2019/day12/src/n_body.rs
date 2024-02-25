@@ -1,9 +1,10 @@
 use std::{
     fs::File,
     io::{BufRead, BufReader},
-    ops::{AddAssign, Neg, Sub, Div, Index, IndexMut},
+    iter::Sum,
+    ops::{AddAssign, Div, Index, IndexMut, Neg, Sub},
     path::Path,
-    str::FromStr, iter::Sum,
+    str::FromStr,
 };
 
 use once_cell::sync::Lazy;
@@ -164,15 +165,13 @@ impl Body {
     }
 }
 
-#[cfg(not(any(feature = "use_avx2",
-    feature = "multithread")))]
+#[cfg(not(any(feature = "use_avx2", feature = "multithread")))]
 // General implementation
 pub struct NBodySimulator {
     bodies: Vec<Body>,
 }
 
-#[cfg(not(any(feature = "use_avx2",
-    feature = "multithread")))]
+#[cfg(not(any(feature = "use_avx2", feature = "multithread")))]
 impl NBodySimulator {
     pub fn new(bodies: Vec<Body>) -> Self {
         Self { bodies }
@@ -225,52 +224,67 @@ pub use multithread::NBodySimulator;
 
 #[cfg(feature = "multithread")]
 mod multithread {
-    use std::sync::{Arc, RwLock};
+    use rayon::prelude::*;
 
     use super::{Body, Vec3};
-    use threadpool::ThreadPool;
 
+    struct Bodies1D {
+        pos_v: Vec<i32>,
+        vel_v: Vec<i32>,
+    }
     // Implementation using multiple threads to update each dimension.
     pub struct NBodySimulator {
-        pos_x: Arc<RwLock<Vec<i32>>>,
-        pos_y: Arc<RwLock<Vec<i32>>>,
-        pos_z: Arc<RwLock<Vec<i32>>>,
-        vel_x: Arc<RwLock<Vec<i32>>>,
-        vel_y: Arc<RwLock<Vec<i32>>>,
-        vel_z: Arc<RwLock<Vec<i32>>>,
-        thread_pool: ThreadPool,
+        dimensions: [Bodies1D; 3],
     }
 
     impl NBodySimulator {
         pub fn new(bodies: Vec<Body>) -> Self {
+            let dim_x = Bodies1D {
+                pos_v: bodies.iter().map(|b| b.pos[0]).collect(),
+                vel_v: bodies.iter().map(|b| b.vel[0]).collect(),
+            };
+            let dim_y = Bodies1D {
+                pos_v: bodies.iter().map(|b| b.pos[1]).collect(),
+                vel_v: bodies.iter().map(|b| b.vel[1]).collect(),
+            };
+            let dim_z = Bodies1D {
+                pos_v: bodies.iter().map(|b| b.pos[2]).collect(),
+                vel_v: bodies.iter().map(|b| b.vel[2]).collect(),
+            };
+
             Self {
-                pos_x: Arc::new(RwLock::new(bodies.iter().map(|b| b.pos[0]).collect())),
-                pos_y: Arc::new(RwLock::new(bodies.iter().map(|b| b.pos[1]).collect())),
-                pos_z: Arc::new(RwLock::new(bodies.iter().map(|b| b.pos[2]).collect())),
-                vel_x: Arc::new(RwLock::new(bodies.iter().map(|b| b.vel[0]).collect())),
-                vel_y: Arc::new(RwLock::new(bodies.iter().map(|b| b.vel[1]).collect())),
-                vel_z: Arc::new(RwLock::new(bodies.iter().map(|b| b.vel[2]).collect())),
-                thread_pool: ThreadPool::new(4),
+                dimensions: [dim_x, dim_y, dim_z],
             }
         }
 
         pub fn body_count(&self) -> usize {
-            self.pos_x.read().unwrap().len()
+            self.dimensions[0].pos_v.len()
         }
 
         pub fn nth_body(&self, n: usize) -> Body {
             Body {
-                pos: Vec3::new(self.pos_x.read().unwrap()[n], self.pos_y.read().unwrap()[n], self.pos_z.read().unwrap()[n]), 
-                vel: Vec3::new(self.vel_x.read().unwrap()[n], self.vel_y.read().unwrap()[n], self.vel_z.read().unwrap()[n]),
+                pos: Vec3::new(
+                    self.dimensions[0].pos_v[n],
+                    self.dimensions[1].pos_v[n],
+                    self.dimensions[2].pos_v[n],
+                ),
+                vel: Vec3::new(
+                    self.dimensions[0].vel_v[n],
+                    self.dimensions[1].vel_v[n],
+                    self.dimensions[2].vel_v[n],
+                ),
             }
         }
 
         pub fn step(&mut self) {
-            let update = |pos_v: Arc<RwLock<Vec<i32>>>, vel_v: Arc<RwLock<Vec<i32>>>| {
-                let mut pos_v = pos_v.write().unwrap();
-                let mut vel_v = vel_v.write().unwrap();
+            self.dimensions.par_iter_mut().for_each(|b1d| {
+                let pos_v = &mut b1d.pos_v;
+                let vel_v = &mut b1d.vel_v;
                 let body_count = pos_v.len();
-                assert!(pos_v.len() == vel_v.len(), "Length of position vector and velocity vector should be equal");
+                assert!(
+                    pos_v.len() == vel_v.len(),
+                    "Length of position vector and velocity vector should be equal"
+                );
                 for i in 0..body_count {
                     for j in (i + 1)..body_count {
                         let delta_vel = (pos_v[j] - pos_v[i]).signum();
@@ -280,64 +294,65 @@ mod multithread {
 
                     pos_v[i] += vel_v[i];
                 }
-            };
-
-            let pos_v = self.pos_x.clone();
-            let vel_v = self.vel_x.clone();
-            self.thread_pool.execute(move || { update(pos_v.clone(), vel_v.clone()) });
-            let pos_v = self.pos_y.clone();
-            let vel_v = self.vel_y.clone();
-            self.thread_pool.execute(move || { update(pos_v.clone(), vel_v.clone()) });
-            let pos_v = self.pos_z.clone();
-            let vel_v = self.vel_z.clone();
-            self.thread_pool.execute(move || { update(pos_v.clone(), vel_v.clone()) });
-
-            self.thread_pool.join();
+            });
         }
 
         pub fn potential_energy(&self) -> u32 {
-            (0..self.body_count()).into_iter().map(|i| self.nth_body(i).potential_energy()).sum()
+            (0..self.body_count())
+                .into_iter()
+                .map(|i| self.nth_body(i).potential_energy())
+                .sum()
         }
-    
+
         pub fn kinetic_energy(&self) -> u32 {
-            (0..self.body_count()).into_iter().map(|i| self.nth_body(i).kinetic_energy()).sum()
+            (0..self.body_count())
+                .into_iter()
+                .map(|i| self.nth_body(i).kinetic_energy())
+                .sum()
         }
-    
+
         pub fn total_energy(&self) -> u32 {
-            (0..self.body_count()).into_iter().map(|i| self.nth_body(i).total_energy()).sum()
+            (0..self.body_count())
+                .into_iter()
+                .map(|i| self.nth_body(i).total_energy())
+                .sum()
         }
-    
+
         pub fn center_pos(&self) -> Vec3 {
             let count = self.body_count();
-            Vec3::new(self.pos_x.read().unwrap().iter().sum::<i32>() / count as i32,
-                self.pos_y.read().unwrap().iter().sum::<i32>() / count as i32,
-                self.pos_z.read().unwrap().iter().sum::<i32>() / count as i32)
+            Vec3::new(
+                self.dimensions[0].pos_v.iter().sum::<i32>() / count as i32,
+                self.dimensions[1].pos_v.iter().sum::<i32>() / count as i32,
+                self.dimensions[2].pos_v.iter().sum::<i32>() / count as i32,
+            )
         }
-    
+
         pub fn vel_sum(&self) -> Vec3 {
-            Vec3::new(self.vel_x.read().unwrap().iter().sum(),
-                self.vel_y.read().unwrap().iter().sum(),
-                self.vel_z.read().unwrap().iter().sum())
+            Vec3::new(
+                self.dimensions[0].vel_v.iter().sum(),
+                self.dimensions[1].vel_v.iter().sum(),
+                self.dimensions[2].vel_v.iter().sum(),
+            )
         }
     }
 }
 
 #[cfg(all(
-    any(target_arch = "x86", target_arch = "x86_64"), 
+    any(target_arch = "x86", target_arch = "x86_64"),
     target_feature = "avx2",
-    feature = "use_avx2")
-)]
+    feature = "use_avx2"
+))]
 pub use avx2::NBodySimulator;
 
 #[cfg(all(
-    any(target_arch = "x86", target_arch = "x86_64"), 
+    any(target_arch = "x86", target_arch = "x86_64"),
     target_feature = "avx2",
-    feature = "use_avx2")
-)]
+    feature = "use_avx2"
+))]
 mod avx2 {
-    use std::iter;
     use super::{Body, Vec3};
     use aligned_vec::AVec;
+    use std::iter;
 
     pub struct NBodySimulator {
         count: usize,
@@ -352,7 +367,7 @@ mod avx2 {
         acc_z: AVec<i32>,
         pad_mask: AVec<i32>,
     }
-    
+
     impl NBodySimulator {
         pub fn new(bodies: Vec<Body>) -> Self {
             let pad_count = 8 - bodies.len() % 8;
@@ -360,45 +375,98 @@ mod avx2 {
             fn fill_aligned_vec(_: usize, iter: impl Iterator<Item = i32>) -> AVec<i32> {
                 AVec::from_iter(32, iter)
             }
-    
+
             Self {
                 count: bodies.len(),
-                pos_x: fill_aligned_vec(total_len, bodies.iter().map(|b| b.pos[0]).chain(iter::repeat(0).take(pad_count))),
-                pos_y: fill_aligned_vec(total_len, bodies.iter().map(|b| b.pos[1]).chain(iter::repeat(0).take(pad_count))),
-                pos_z: fill_aligned_vec(total_len, bodies.iter().map(|b| b.pos[2]).chain(iter::repeat(0).take(pad_count))),
-                vel_x: fill_aligned_vec(total_len, bodies.iter().map(|b| b.vel[0]).chain(iter::repeat(0).take(pad_count))),
-                vel_y: fill_aligned_vec(total_len, bodies.iter().map(|b| b.vel[1]).chain(iter::repeat(0).take(pad_count))),
-                vel_z: fill_aligned_vec(total_len, bodies.iter().map(|b| b.vel[2]).chain(iter::repeat(0).take(pad_count))),
+                pos_x: fill_aligned_vec(
+                    total_len,
+                    bodies
+                        .iter()
+                        .map(|b| b.pos[0])
+                        .chain(iter::repeat(0).take(pad_count)),
+                ),
+                pos_y: fill_aligned_vec(
+                    total_len,
+                    bodies
+                        .iter()
+                        .map(|b| b.pos[1])
+                        .chain(iter::repeat(0).take(pad_count)),
+                ),
+                pos_z: fill_aligned_vec(
+                    total_len,
+                    bodies
+                        .iter()
+                        .map(|b| b.pos[2])
+                        .chain(iter::repeat(0).take(pad_count)),
+                ),
+                vel_x: fill_aligned_vec(
+                    total_len,
+                    bodies
+                        .iter()
+                        .map(|b| b.vel[0])
+                        .chain(iter::repeat(0).take(pad_count)),
+                ),
+                vel_y: fill_aligned_vec(
+                    total_len,
+                    bodies
+                        .iter()
+                        .map(|b| b.vel[1])
+                        .chain(iter::repeat(0).take(pad_count)),
+                ),
+                vel_z: fill_aligned_vec(
+                    total_len,
+                    bodies
+                        .iter()
+                        .map(|b| b.vel[2])
+                        .chain(iter::repeat(0).take(pad_count)),
+                ),
                 acc_x: fill_aligned_vec(total_len, iter::repeat(0).take(total_len)),
                 acc_y: fill_aligned_vec(total_len, iter::repeat(0).take(total_len)),
                 acc_z: fill_aligned_vec(total_len, iter::repeat(0).take(total_len)),
-                pad_mask: fill_aligned_vec(total_len, iter::repeat(-1).take(bodies.len()).chain(iter::repeat(0).take(pad_count))),
+                pad_mask: fill_aligned_vec(
+                    total_len,
+                    iter::repeat(-1)
+                        .take(bodies.len())
+                        .chain(iter::repeat(0).take(pad_count)),
+                ),
             }
         }
-    
+
         pub fn body_count(&self) -> usize {
             self.count
         }
-    
+
         pub fn nth_body(&self, n: usize) -> Body {
             Body {
-                pos: Vec3::new(self.pos_x[n], self.pos_y[n], self.pos_z[n]), 
+                pos: Vec3::new(self.pos_x[n], self.pos_y[n], self.pos_z[n]),
                 vel: Vec3::new(self.vel_x[n], self.vel_y[n], self.vel_z[n]),
             }
         }
-    
+
         pub fn step(&mut self) {
             #[cfg(target_arch = "x86")]
             use std::arch::x86::*;
             #[cfg(target_arch = "x86_64")]
             use std::arch::x86_64::*;
-    
+
             let lane_count = 8;
             let block_count = self.pos_x.len() / lane_count;
-            let pos_pointers = [self.pos_x.as_mut_ptr(), self.pos_y.as_mut_ptr(), self.pos_z.as_mut_ptr()];
-            let vel_pointers = [self.vel_x.as_mut_ptr(), self.vel_y.as_mut_ptr(), self.vel_z.as_mut_ptr()];
-            let acc_pointers = [self.acc_x.as_mut_ptr(), self.acc_y.as_mut_ptr(), self.acc_z.as_mut_ptr()];
-    
+            let pos_pointers = [
+                self.pos_x.as_mut_ptr(),
+                self.pos_y.as_mut_ptr(),
+                self.pos_z.as_mut_ptr(),
+            ];
+            let vel_pointers = [
+                self.vel_x.as_mut_ptr(),
+                self.vel_y.as_mut_ptr(),
+                self.vel_z.as_mut_ptr(),
+            ];
+            let acc_pointers = [
+                self.acc_x.as_mut_ptr(),
+                self.acc_y.as_mut_ptr(),
+                self.acc_z.as_mut_ptr(),
+            ];
+
             unsafe {
                 let ones = _mm256_set1_epi32(1);
                 for d in 0..3 {
@@ -410,86 +478,115 @@ mod avx2 {
                         let mut this_body_acc = _mm256_set1_epi32(0);
                         for b in 0..block_count {
                             // Iterate on b_th block of body data
-                            let block_mask = _mm256_load_si256(self.pad_mask.as_ptr().add(b * lane_count) as *const _);
+                            let block_mask = _mm256_load_si256(
+                                self.pad_mask.as_ptr().add(b * lane_count) as *const _,
+                            );
                             let this_body_pos = _mm256_and_si256(body_pos_lanes, block_mask);
-                            let other_bodies_pos = _mm256_load_si256(pos_pointers[d].add(b * lane_count) as *const _);
+                            let other_bodies_pos =
+                                _mm256_load_si256(pos_pointers[d].add(b * lane_count) as *const _);
                             let body_pos_diff = _mm256_sub_epi32(other_bodies_pos, this_body_pos);
                             let this_block_acc = _mm256_sign_epi32(ones, body_pos_diff);
                             this_body_acc = _mm256_add_epi32(this_body_acc, this_block_acc);
                         }
                         *acc_pointers[d].add(i) = hsum_8x32(this_body_acc);
                     }
-    
+
                     // Update velocity and position in this dimension.
                     for b2 in 0..block_count {
-                        let block_mask = _mm256_load_si256(self.pad_mask.as_ptr().add(b2 * lane_count) as *const _);
-                        let this_block_acc = _mm256_maskload_epi32(acc_pointers[d].add(b2 * lane_count) as *const _, block_mask);
-                        let mut this_block_vel = _mm256_maskload_epi32(vel_pointers[d].add(b2 * lane_count) as *const _, block_mask);
+                        let block_mask = _mm256_load_si256(
+                            self.pad_mask.as_ptr().add(b2 * lane_count) as *const _,
+                        );
+                        let this_block_acc = _mm256_maskload_epi32(
+                            acc_pointers[d].add(b2 * lane_count) as *const _,
+                            block_mask,
+                        );
+                        let mut this_block_vel = _mm256_maskload_epi32(
+                            vel_pointers[d].add(b2 * lane_count) as *const _,
+                            block_mask,
+                        );
                         this_block_vel = _mm256_add_epi32(this_block_vel, this_block_acc);
-                        let mut this_block_pos = _mm256_maskload_epi32(pos_pointers[d].add(b2 * lane_count) as *const _, block_mask);
+                        let mut this_block_pos = _mm256_maskload_epi32(
+                            pos_pointers[d].add(b2 * lane_count) as *const _,
+                            block_mask,
+                        );
                         this_block_pos = _mm256_add_epi32(this_block_pos, this_block_vel);
-    
-                        _mm256_maskstore_epi32(vel_pointers[d].add(b2 * lane_count), block_mask, this_block_vel);
-                        _mm256_maskstore_epi32(pos_pointers[d].add(b2 * lane_count), block_mask, this_block_pos);
+
+                        _mm256_maskstore_epi32(
+                            vel_pointers[d].add(b2 * lane_count),
+                            block_mask,
+                            this_block_vel,
+                        );
+                        _mm256_maskstore_epi32(
+                            pos_pointers[d].add(b2 * lane_count),
+                            block_mask,
+                            this_block_pos,
+                        );
                     }
                 }
             }
-            
         }
-    
+
         pub fn potential_energy(&self) -> u32 {
-            (0..self.count).into_iter().map(|i| self.nth_body(i).potential_energy()).sum()
+            (0..self.count)
+                .into_iter()
+                .map(|i| self.nth_body(i).potential_energy())
+                .sum()
         }
-    
+
         pub fn kinetic_energy(&self) -> u32 {
-            (0..self.count).into_iter().map(|i| self.nth_body(i).kinetic_energy()).sum()
+            (0..self.count)
+                .into_iter()
+                .map(|i| self.nth_body(i).kinetic_energy())
+                .sum()
         }
-    
+
         pub fn total_energy(&self) -> u32 {
-            (0..self.count).into_iter().map(|i| self.nth_body(i).total_energy()).sum()
+            (0..self.count)
+                .into_iter()
+                .map(|i| self.nth_body(i).total_energy())
+                .sum()
         }
-    
+
         pub fn center_pos(&self) -> Vec3 {
-            Vec3::new(self.pos_x[0..self.count].iter().sum::<i32>() / self.count as i32,
+            Vec3::new(
+                self.pos_x[0..self.count].iter().sum::<i32>() / self.count as i32,
                 self.pos_y[0..self.count].iter().sum::<i32>() / self.count as i32,
-                self.pos_z[0..self.count].iter().sum::<i32>() / self.count as i32)
+                self.pos_z[0..self.count].iter().sum::<i32>() / self.count as i32,
+            )
         }
-    
+
         pub fn vel_sum(&self) -> Vec3 {
-            Vec3::new(self.vel_x[0..self.count].iter().sum(),
+            Vec3::new(
+                self.vel_x[0..self.count].iter().sum(),
                 self.vel_y[0..self.count].iter().sum(),
-                self.vel_z[0..self.count].iter().sum())
+                self.vel_z[0..self.count].iter().sum(),
+            )
         }
     }
-    
+
     // The following two function is for calculating 8 32-bit integers' sum, copied from Peter Cordes' answer at https://stackoverflow.com/questions/60108658/fastest-method-to-calculate-sum-of-all-packed-32-bit-integers-using-avx512-or-av
     unsafe fn hsum_epi32_avx(n: std::arch::x86_64::__m128i) -> i32 {
         #[cfg(target_arch = "x86")]
         use std::arch::x86::*;
         #[cfg(target_arch = "x86_64")]
         use std::arch::x86_64::*;
-    
+
         let hi64 = _mm_unpackhi_epi64(n, n);
         let sum64 = _mm_add_epi32(hi64, n);
         let hi32 = _mm_shuffle_epi32::<0xB1>(sum64); // _MM_PERM_CDBA
         let sum32 = _mm_add_epi32(sum64, hi32);
         _mm_cvtsi128_si32(sum32)
     }
-    
 
     unsafe fn hsum_8x32(n: std::arch::x86_64::__m256i) -> i32 {
         #[cfg(target_arch = "x86")]
         use std::arch::x86::*;
         #[cfg(target_arch = "x86_64")]
         use std::arch::x86_64::*;
-    
-        let sum128 = _mm_add_epi32(
-            _mm256_castsi256_si128(n),
-            _mm256_extracti128_si256::<1>(n)
-        );
+
+        let sum128 = _mm_add_epi32(_mm256_castsi256_si128(n), _mm256_extracti128_si256::<1>(n));
         hsum_epi32_avx(sum128)
     }
-    
 
     #[test]
     fn test_hsum_8x32() {
@@ -505,7 +602,6 @@ mod avx2 {
         }
     }
 }
-
 
 pub fn read_n_body<P>(path: P) -> Result<Vec<Body>, Error>
 where
