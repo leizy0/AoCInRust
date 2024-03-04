@@ -97,6 +97,10 @@ impl Vec3 {
         Self { v: [x, y, z] }
     }
 
+    fn zeros() -> Self {
+        Self::new(0, 0, 0)
+    }
+
     fn signum(&self) -> Self {
         Self::new(self.v[0].signum(), self.v[1].signum(), self.v[2].signum())
     }
@@ -187,6 +191,10 @@ impl NBodySimulator {
 
     pub fn step(&mut self) {
         let body_count = self.bodies.len();
+        if body_count == 4 {
+            return self.step_4_bodies();
+        }
+
         for i in 0..body_count {
             for j in (i + 1)..body_count {
                 let grav_vel = self.bodies[i].grav_vel_from(&self.bodies[j]);
@@ -196,6 +204,38 @@ impl NBodySimulator {
 
             self.bodies[i].apply_vel();
         }
+    }
+
+    fn step_4_bodies(&mut self) {
+        let mut delta_v0 = Vec3::zeros();
+        let mut delta_v1 = Vec3::zeros();
+        let mut delta_v2 = Vec3::zeros();
+        let mut delta_v3 = Vec3::zeros();
+
+        let update = |this: &mut Self,
+                      body_ind0: usize,
+                      body_ind1: usize,
+                      delta_v_r_0: &mut Vec3,
+                      delta_v_r_1: &mut Vec3| {
+            let delta_v = this.bodies[body_ind0].grav_vel_from(&this.bodies[body_ind1]);
+            *delta_v_r_0 += delta_v;
+            *delta_v_r_1 += -delta_v;
+        };
+
+        update(self, 0, 1, &mut delta_v0, &mut delta_v1);
+        update(self, 0, 2, &mut delta_v0, &mut delta_v2);
+        update(self, 0, 3, &mut delta_v0, &mut delta_v3);
+        *self.bodies[0].vel_mut() += delta_v0;
+        self.bodies[0].apply_vel();
+        update(self, 1, 2, &mut delta_v1, &mut delta_v2);
+        update(self, 1, 3, &mut delta_v1, &mut delta_v3);
+        *self.bodies[1].vel_mut() += delta_v1;
+        self.bodies[1].apply_vel();
+        update(self, 2, 3, &mut delta_v2, &mut delta_v3);
+        *self.bodies[2].vel_mut() += delta_v2;
+        self.bodies[2].apply_vel();
+        *self.bodies[3].vel_mut() += delta_v3;
+        self.bodies[3].apply_vel();
     }
 
     pub fn potential_energy(&self) -> u32 {
