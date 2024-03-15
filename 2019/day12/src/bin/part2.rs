@@ -1,7 +1,7 @@
 use day12::n_body::{read_n_body, NBodySimulator};
 
 fn main() {
-    let input_path = "test_inputs1.txt";
+    let input_path = "inputs.txt";
     let init_bodies = match read_n_body(input_path) {
         Ok(v) => v,
         Err(e) => {
