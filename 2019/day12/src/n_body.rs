@@ -212,26 +212,29 @@ impl NBodySimulator {
         let mut delta_v2 = Vec3::zeros();
         let mut delta_v3 = Vec3::zeros();
 
-        let update = |this: &mut Self,
-                      body_ind0: usize,
-                      body_ind1: usize,
-                      delta_v_r_0: &mut Vec3,
-                      delta_v_r_1: &mut Vec3| {
-            let delta_v = this.bodies[body_ind0].grav_vel_from(&this.bodies[body_ind1]);
+        fn update(
+            bodies: &mut [Body],
+            body_ind0: usize,
+            body_ind1: usize,
+            delta_v_r_0: &mut Vec3,
+            delta_v_r_1: &mut Vec3,
+        ) {
+            let delta_v = bodies[body_ind0].grav_vel_from(&bodies[body_ind1]);
             *delta_v_r_0 += delta_v;
             *delta_v_r_1 += -delta_v;
-        };
+        }
 
-        update(self, 0, 1, &mut delta_v0, &mut delta_v1);
-        update(self, 0, 2, &mut delta_v0, &mut delta_v2);
-        update(self, 0, 3, &mut delta_v0, &mut delta_v3);
+        update(&mut self.bodies, 0, 1, &mut delta_v0, &mut delta_v1);
+        update(&mut self.bodies, 0, 2, &mut delta_v0, &mut delta_v2);
+        update(&mut self.bodies, 0, 3, &mut delta_v0, &mut delta_v3);
+        update(&mut self.bodies, 1, 2, &mut delta_v1, &mut delta_v2);
+        update(&mut self.bodies, 1, 3, &mut delta_v1, &mut delta_v3);
+        update(&mut self.bodies, 2, 3, &mut delta_v2, &mut delta_v3);
+
         *self.bodies[0].vel_mut() += delta_v0;
         self.bodies[0].apply_vel();
-        update(self, 1, 2, &mut delta_v1, &mut delta_v2);
-        update(self, 1, 3, &mut delta_v1, &mut delta_v3);
         *self.bodies[1].vel_mut() += delta_v1;
         self.bodies[1].apply_vel();
-        update(self, 2, 3, &mut delta_v2, &mut delta_v3);
         *self.bodies[2].vel_mut() += delta_v2;
         self.bodies[2].apply_vel();
         *self.bodies[3].vel_mut() += delta_v3;
