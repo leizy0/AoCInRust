@@ -262,6 +262,10 @@ impl NBodySimulator {
     }
 }
 
+#[cfg(all(feature = "multithread",
+    feature = "use_avx2"))]
+compile_error!("Given two features(multithread and use_avx2) are exclusive, can't be enabled in same time.");
+
 #[cfg(feature = "multithread")]
 pub use multithread::NBodySimulator;
 
