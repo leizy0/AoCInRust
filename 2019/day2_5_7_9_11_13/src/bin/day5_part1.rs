@@ -1,4 +1,4 @@
-use day2_5_7_9_11::int_code::{
+use day2_5_7_9_11_13::int_code::{
     com::{Channel, InputDevice, IntCodeComputer, OutputDevice},
     read_int_code,
 };
@@ -10,7 +10,7 @@ fn main() {
         int_code_file
     ));
     let mut computer = IntCodeComputer::new(false);
-    let input_dev = InputDevice::new(Channel::new(&[5]));
+    let input_dev = InputDevice::new(Channel::new(&[1]));
     let output_dev = OutputDevice::new(Channel::new(&[]));
     match computer.execute_with_io(&int_code, input_dev, output_dev.clone()) {
         Ok(res) => output_dev.check(|c| {
@@ -18,7 +18,7 @@ fn main() {
                 "After {} steps, execution finished, Outputs: {:?}",
                 res.step_count(),
                 c.data()
-            )
+            );
         }),
         Err(e) => eprintln!("Failed to execute int code, get error({})", e),
     }

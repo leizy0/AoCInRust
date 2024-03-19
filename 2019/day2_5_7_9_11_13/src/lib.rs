@@ -1,6 +1,7 @@
 use std::fmt::Display;
 
 pub mod amp;
+pub mod arcade;
 pub mod int_code;
 pub mod paint;
 
