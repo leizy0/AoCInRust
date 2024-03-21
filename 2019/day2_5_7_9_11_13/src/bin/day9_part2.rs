@@ -1,5 +1,6 @@
 use day2_5_7_9_11_13::int_code::{
-    com::{Channel, InputDevice, IntCodeComputer, OutputDevice},
+    com::SeqIntCodeComputer,
+    io::{Channel, SeqInputDevice, SeqOutputDevice},
     read_int_code,
 };
 
@@ -16,9 +17,9 @@ fn main() {
         }
     };
 
-    let mut computer = IntCodeComputer::new(true);
-    let input_dev = InputDevice::new(Channel::new(&[2]));
-    let output_dev = OutputDevice::new(Channel::new(&[]));
+    let mut computer = SeqIntCodeComputer::new(true);
+    let input_dev = SeqInputDevice::new(Channel::new(&[2]));
+    let output_dev = SeqOutputDevice::new(Channel::new(&[]));
     match computer.execute_with_io(&int_code, input_dev, output_dev.clone()) {
         Ok(res) => output_dev.check(|c| {
             println!(

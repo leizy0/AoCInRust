@@ -1,5 +1,6 @@
 use day2_5_7_9_11_13::int_code::{
-    com::{Channel, InputDevice, IntCodeComputer, OutputDevice},
+    com::SeqIntCodeComputer,
+    io::{Channel, SeqInputDevice, SeqOutputDevice},
     read_int_code,
 };
 
@@ -8,14 +9,14 @@ fn main() {
     let int_code = read_int_code(int_code_file)
         .expect(&format!("Failed to read int code from {}", int_code_file));
 
-    let mut computer = IntCodeComputer::new(false);
+    let mut computer = SeqIntCodeComputer::new(false);
     for code1 in 0..3 {
         for code2 in 0..=9 {
             let mut int_code_image = int_code.clone();
             int_code_image[1] = code1;
             int_code_image[2] = code2;
-            let input_dev = InputDevice::new(Channel::new(&[]));
-            let output_dev = OutputDevice::new(Channel::new(&[]));
+            let input_dev = SeqInputDevice::new(Channel::new(&[]));
+            let output_dev = SeqOutputDevice::new(Channel::new(&[]));
             match computer.execute_with_io(&int_code_image, input_dev, output_dev) {
                 Ok(res) => println!(
                     "{:>2} | {:>2}: After {} steps, program halts, code[0] = {}",

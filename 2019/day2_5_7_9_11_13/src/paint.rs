@@ -3,7 +3,7 @@ use std::{collections::HashMap, fmt::Display};
 use int_enum::IntEnum;
 
 use crate::{
-    int_code::com::{InputPort, OutputPort},
+    int_code::io::{InputPort, OutputPort},
     Error as ExecutionError,
 };
 
