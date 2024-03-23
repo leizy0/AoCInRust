@@ -131,13 +131,13 @@ impl<T: ?Sized + Send> Ref<T> for ParaRef<T> {
 }
 
 macro_rules! def_device {
-    (name=$name:ident, ref_type=$ref_type:ident, input_ref_type=$input_ref_type:ident $(, device_addition_markers=$device_addition_markers:tt)?) => {
+    (name=$name:ident, ref_type=$ref_type:ident, input_ref_type=$input_ref_type:ident $(, device_additional_markers=$device_additional_markers:tt)?) => {
         // Input device
-        pub struct $name<P: InputPort $(+ $device_addition_markers)? + 'static> {
+        pub struct $name<P: InputPort $(+ $device_additional_markers)? + 'static> {
             r: $ref_type<P>,
         }
 
-        impl<P: InputPort $(+ $device_addition_markers)? + 'static> Clone for $name<P> {
+        impl<P: InputPort $(+ $device_additional_markers)? + 'static> Clone for $name<P> {
             fn clone(&self) -> Self {
                 Self {
                     r: self.r.clone(),
@@ -145,7 +145,7 @@ macro_rules! def_device {
             }
         }
 
-        impl<P: InputPort $(+ $device_addition_markers)? + 'static> $name<P> {
+        impl<P: InputPort $(+ $device_additional_markers)? + 'static> $name<P> {
             pub fn new(port: P) -> Self {
                 Self {
                     r: $ref_type::new(port),
@@ -171,13 +171,13 @@ macro_rules! def_device {
             }
         }
     };
-    (name=$name:ident, ref_type=$ref_type:ident, output_ref_type=$output_ref_type:ident$(, device_addition_markers=$device_addition_markers:tt)?) => {
+    (name=$name:ident, ref_type=$ref_type:ident, output_ref_type=$output_ref_type:ident$(, device_additional_markers=$device_additional_markers:tt)?) => {
         // Output device
-        pub struct $name<P: OutputPort $(+ $device_addition_markers)? + 'static> {
+        pub struct $name<P: OutputPort $(+ $device_additional_markers)? + 'static> {
             r: $ref_type<P>,
         }
 
-        impl<P: OutputPort $(+ $device_addition_markers)? + 'static> Clone for $name<P> {
+        impl<P: OutputPort $(+ $device_additional_markers)? + 'static> Clone for $name<P> {
             fn clone(&self) -> Self {
                 Self {
                     r: self.r.clone(),
@@ -185,7 +185,7 @@ macro_rules! def_device {
             }
         }
 
-        impl<P: OutputPort $(+ $device_addition_markers)? + 'static> $name<P> {
+        impl<P: OutputPort $(+ $device_additional_markers)? + 'static> $name<P> {
             pub fn new(port: P) -> Self {
                 Self {
                     r: $ref_type::new(port),
@@ -211,13 +211,13 @@ macro_rules! def_device {
             }
         }
     };
-    (name=$name:ident, ref_type=$ref_type:ident, input_device_type=$input_device_type:ident, output_device_type=$output_device_type:ident $(, device_addition_markers=$device_addition_markers:tt)?) => {
+    (name=$name:ident, ref_type=$ref_type:ident, input_device_type=$input_device_type:ident, output_device_type=$output_device_type:ident $(, device_additional_markers=$device_additional_markers:tt)?) => {
         // I/O device
-        pub struct $name<P: IOPort $(+ $device_addition_markers)? + 'static> {
+        pub struct $name<P: IOPort $(+ $device_additional_markers)? + 'static> {
             r: $ref_type<P>,
         }
 
-        impl<P: IOPort $(+ $device_addition_markers)? + 'static> Clone for $name<P> {
+        impl<P: IOPort $(+ $device_additional_markers)? + 'static> Clone for $name<P> {
             fn clone(&self) -> Self {
                 Self {
                     r: self.r.clone(),
@@ -225,7 +225,7 @@ macro_rules! def_device {
             }
         }
 
-        impl<P: IOPort $(+ $device_addition_markers)? + 'static> $name<P> {
+        impl<P: IOPort $(+ $device_additional_markers)? + 'static> $name<P> {
             pub fn new(port: P) -> Self {
                 Self {
                     r: $ref_type::new(port),
@@ -270,7 +270,7 @@ def_device!(
     name = ParaInputDevice,
     ref_type = ParaRef,
     input_ref_type = ParaInputRef,
-    device_addition_markers = Send
+    device_additional_markers = Send
 );
 def_device!(
     name = SeqOutputDevice,
@@ -281,7 +281,7 @@ def_device!(
     name = ParaOutputDevice,
     ref_type = ParaRef,
     output_ref_type = ParaOutputRef,
-    device_addition_markers = Send
+    device_additional_markers = Send
 );
 def_device!(
     name = SeqIODevice,
@@ -294,7 +294,7 @@ def_device!(
     ref_type = ParaRef,
     input_device_type = ParaInputDevice,
     output_device_type = ParaOutputDevice,
-    device_addition_markers = Send
+    device_additional_markers = Send
 );
 
 pub struct Channel {

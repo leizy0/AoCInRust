@@ -56,7 +56,7 @@ pub enum ProcessState {
 }
 
 macro_rules! def_computer {
-    (name=$name:ident, input_device_type=$input_device_type:ident, output_device_type=$output_device_type:ident, input_ref_type=$input_ref_type:ident, output_ref_type=$output_ref_type:ident $(, device_addition_markers=$device_addition_markers:tt)?) => {
+    (name=$name:ident, input_device_type=$input_device_type:ident, output_device_type=$output_device_type:ident, input_ref_type=$input_ref_type:ident, output_ref_type=$output_ref_type:ident $(, device_additional_markers=$device_additional_markers:tt)?) => {
         pub struct $name {
             pub enable_debug_output: bool,
             processes: Vec<Option<Process>>,
@@ -77,8 +77,8 @@ macro_rules! def_computer {
                 output_dev: $output_device_type<OD>,
             ) -> Result<ProcessResult, Error>
             where
-                ID: InputPort $(+ $device_addition_markers)?,
-                OD: OutputPort $(+ $device_addition_markers)?,
+                ID: InputPort $(+ $device_additional_markers)?,
+                OD: OutputPort $(+ $device_additional_markers)?,
             {
                 let proc_id = self.new_proc(&image, input_dev, output_dev);
                 loop {
@@ -186,8 +186,8 @@ macro_rules! def_computer {
                 output_dev: $output_device_type<OD>,
             ) -> usize
             where
-                ID: InputPort $(+ $device_addition_markers)?,
-                OD: OutputPort $(+ $device_addition_markers)?,
+                ID: InputPort $(+ $device_additional_markers)?,
+                OD: OutputPort $(+ $device_additional_markers)?,
             {
                 let proc = Process::new(int_code, input_dev.input_port(), output_dev.output_port());
                 let mut exist_slot_id = None;
@@ -411,7 +411,7 @@ mod para {
         output_device_type = ParaOutputDevice,
         input_ref_type = ParaInputRef,
         output_ref_type = ParaOutputRef,
-        device_addition_markers = Send
+        device_additional_markers = Send
     );
 }
 pub use para::ParaIntCodeComputer;

@@ -26,7 +26,7 @@ fn main() {
     match computer.execute_with_io(&int_code, input_dev, output_dev.clone()) {
         Ok(res) => output_dev.check(|c| {
             println!(
-                "After {} steps, painting program halt, get outputs({:?})",
+                "After {} steps, arcade program halt, get outputs({:?})",
                 res.step_count(),
                 c.data(),
             )
