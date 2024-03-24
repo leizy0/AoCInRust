@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::Error;
 
-pub trait ExecutionState {
+pub trait ExecutionContext {
     fn read_mem(&mut self, ind: usize) -> i64;
     fn write_mem(&mut self, ind: usize, value: i64);
     fn input(&mut self) -> Option<i64>;
@@ -226,13 +226,10 @@ macro_rules! def_computer {
             }
 
             fn awake_proc(&mut self, proc_id: usize) {
-                match self.proc_mut(proc_id) {
-                    Some(p) => {
-                        if p.state == ProcessState::Block {
-                            p.state = ProcessState::Ready;
-                        }
+                if let Some(p) = self.proc_mut(proc_id) {
+                    if p.state == ProcessState::Block {
+                        p.state = ProcessState::Ready;
                     }
-                    _ => (),
                 }
             }
         }
@@ -300,7 +297,7 @@ macro_rules! def_computer {
             }
         }
 
-        impl<'a> ExecutionState for RunningProcess<'a> {
+        impl<'a> ExecutionContext for RunningProcess<'a> {
             fn read_mem(&mut self, ind: usize) -> i64 {
                 if ind < self.run_proc().mem.len() {
                     self.run_proc().mem[ind]
@@ -376,7 +373,7 @@ mod seq {
                 SeqOutputRef,
             },
         },
-        ExecutionState, ProcessResult, ProcessState, ProcsExecutionResult,
+        ExecutionContext, ProcessResult, ProcessState, ProcsExecutionResult,
     };
     use crate::Error;
     use std::collections::HashMap;
@@ -400,7 +397,7 @@ mod para {
                 ParaOutputRef, Ref,
             },
         },
-        ExecutionState, ProcessResult, ProcessState, ProcsExecutionResult,
+        ExecutionContext, ProcessResult, ProcessState, ProcsExecutionResult,
     };
     use crate::Error;
     use std::collections::HashMap;
