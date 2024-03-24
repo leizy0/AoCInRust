@@ -1,7 +1,8 @@
 use std::fmt::Display;
 
-use crate::int_code::com::{
-    Channel, IODevice, InputDevice, IntCodeComputer, OutputDevice, ProcessState,
+use crate::int_code::{
+    com::{ProcessState, SeqIntCodeComputer},
+    io::{Channel, SeqIODevice, SeqInputDevice, SeqOutputDevice},
 };
 
 pub struct AmpSettings {
@@ -120,15 +121,15 @@ impl Display for Error {
 }
 
 pub fn amp_chain(
-    computer: &mut IntCodeComputer,
+    computer: &mut SeqIntCodeComputer,
     int_code: &[i64],
     settings: &[i64],
 ) -> Result<i64, Error> {
     let mut amp_res = 0;
     for i in 0..settings.len() {
         let image = Vec::from(int_code);
-        let input_dev = InputDevice::new(Channel::new(&[settings[i], amp_res]));
-        let output_dev = OutputDevice::new(Channel::new(&[]));
+        let input_dev = SeqInputDevice::new(Channel::new(&[settings[i], amp_res]));
+        let output_dev = SeqOutputDevice::new(Channel::new(&[]));
         let res = computer
             .execute_with_io(&image, input_dev, output_dev.clone())
             .map_err(|e| Error::ExecutionError(e, Vec::from(settings)))?;
@@ -149,7 +150,7 @@ pub fn amp_chain(
 }
 
 pub fn amp_loop(
-    computer: &mut IntCodeComputer,
+    computer: &mut SeqIntCodeComputer,
     int_code: &[i64],
     setting: &[i64],
 ) -> Result<i64, Error> {
@@ -157,9 +158,9 @@ pub fn amp_loop(
     let amp_io_devs = (0..amp_count)
         .map(|i| {
             if i == 0 {
-                IODevice::new(Channel::new(&[setting[0], 0]))
+                SeqIODevice::new(Channel::new(&[setting[0], 0]))
             } else {
-                IODevice::new(Channel::new(&setting[i..(i + 1)]))
+                SeqIODevice::new(Channel::new(&setting[i..(i + 1)]))
             }
         })
         .collect::<Vec<_>>();

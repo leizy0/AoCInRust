@@ -1,5 +1,6 @@
-use day2_5_7_9_11::int_code::{
-    com::{Channel, InputDevice, IntCodeComputer, OutputDevice},
+use day2_5_7_9_11_13::int_code::{
+    com::SeqIntCodeComputer,
+    io::{Channel, SeqInputDevice, SeqOutputDevice},
     read_int_code,
 };
 
@@ -9,9 +10,9 @@ fn main() {
         .expect(&format!("Failed to read int code from {}", int_code_file));
     int_code[1] = 12;
     int_code[2] = 2;
-    let mut computer = IntCodeComputer::new(false);
-    let input_dev = InputDevice::new(Channel::new(&[]));
-    let output_dev = OutputDevice::new(Channel::new(&[]));
+    let mut computer = SeqIntCodeComputer::new(false);
+    let input_dev = SeqInputDevice::new(Channel::new(&[]));
+    let output_dev = SeqOutputDevice::new(Channel::new(&[]));
     match computer.execute_with_io(&int_code, input_dev, output_dev) {
         Ok(res) => println!(
             "After {} steps, program halt, code[0] = {}",

@@ -1,5 +1,6 @@
 pub mod com;
 mod inst;
+pub mod io;
 
 use std::{
     fs::File,

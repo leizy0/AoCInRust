@@ -5,7 +5,7 @@ use once_cell::sync::Lazy;
 
 use crate::Error;
 
-use super::com::ExecutionState;
+use super::com::ExecutionContext;
 
 #[repr(u8)]
 #[derive(Debug, Default, Clone, Copy, IntEnum, PartialEq, Eq)]
@@ -23,14 +23,14 @@ pub trait Instruction: Debug {
     fn params_mut(&mut self) -> &mut [i64];
     fn param_modes(&self) -> &[ParameterMode];
     fn param_modes_mut(&mut self) -> &mut [ParameterMode];
-    fn execute(&self, exe_state: &mut dyn ExecutionState) -> Result<(), Error>;
+    fn execute(&self, exe_state: &mut dyn ExecutionContext) -> Result<(), Error>;
 
-    fn forward_inst_p(&self, exe_state: &mut dyn ExecutionState) {
+    fn forward_inst_p(&self, exe_state: &mut dyn ExecutionContext) {
         *exe_state.inst_p_mut() += self.length();
     }
 
     fn read_mem(
-        exe_state: &mut dyn ExecutionState,
+        exe_state: &mut dyn ExecutionContext,
         param: i64,
         param_mode: ParameterMode,
     ) -> Result<i64, Error>
@@ -56,7 +56,7 @@ pub trait Instruction: Debug {
     }
 
     fn write_mem(
-        exe_state: &mut dyn ExecutionState,
+        exe_state: &mut dyn ExecutionContext,
         param: i64,
         param_mode: ParameterMode,
         value: i64,
@@ -218,7 +218,7 @@ macro_rules! def_instruction {
                 &mut self.param_modes
             }
 
-            fn execute(&self, exe_state: &mut dyn ExecutionState) -> Result<(), Error> {
+            fn execute(&self, exe_state: &mut dyn ExecutionContext) -> Result<(), Error> {
                 let $inst_var = self;
                 let $exe_var = exe_state;
 

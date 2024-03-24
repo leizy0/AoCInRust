@@ -1,6 +1,7 @@
-use day2_5_7_9_11::amp::{amp_chain, AmpSettings};
-use day2_5_7_9_11::int_code::com::IntCodeComputer;
-use day2_5_7_9_11::int_code::read_int_code;
+use day2_5_7_9_11_13::{
+    amp::{amp_chain, AmpSettings},
+    int_code::{com::SeqIntCodeComputer, read_int_code},
+};
 
 fn main() {
     let amplifier_count = 5;
@@ -11,7 +12,7 @@ fn main() {
     ));
     let mut max_output_signal = i64::MIN;
     let mut max_output_setting = vec![-1i64; amplifier_count];
-    let mut computer = IntCodeComputer::new(false);
+    let mut computer = SeqIntCodeComputer::new(false);
     let mut try_count = 0;
 
     for setting in AmpSettings::new(amplifier_count).iter() {
