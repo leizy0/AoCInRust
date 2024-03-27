@@ -45,11 +45,11 @@ impl Display for Chemical {
 
 pub struct Material {
     chemical: Chemical,
-    unit_n: u32,
+    unit_n: u64,
 }
 
 impl Material {
-    pub fn new(chemical: Chemical, unit_n: u32) -> Self {
+    pub fn new(chemical: Chemical, unit_n: u64) -> Self {
         Self { chemical, unit_n }
     }
 
@@ -84,7 +84,7 @@ impl TryFrom<&str> for Reaction {
             let mut materials = MATERIAL_REGEX
                 .captures_iter(value)
                 .map(|caps| {
-                    let unit_n = u32::from_str_radix(caps[1].as_ref(), 10).unwrap();
+                    let unit_n = u64::from_str_radix(caps[1].as_ref(), 10).unwrap();
                     let chemical = Chemical(caps[2].to_string());
                     Material::new(chemical, unit_n)
                 })
@@ -116,10 +116,35 @@ impl ReactionMap {
         self.map.contains_key(chemical)
     }
 
-    pub fn decompose(&self, target_material: &Material) -> Result<u32, Error> {
-        let mut decom_mats =
-            HashMap::from([(target_material.chemical.clone(), target_material.unit_n)]);
-        let mut left_mats = HashMap::<Chemical, u32>::new();
+    pub fn synthesize(&self, target_chemical: &Chemical, mut ore_unit_n: u64) -> Result<(u64, u64), Error> {
+        let mut left_mats = HashMap::new();
+        let mut target_unit_n = 0;
+        loop {
+            let used_ore_unit_n = self.decompose_one_unit(target_chemical, &mut left_mats)?;
+            if used_ore_unit_n > ore_unit_n {
+                return Ok((target_unit_n, ore_unit_n))
+            }
+
+            target_unit_n += 1;
+            ore_unit_n -= used_ore_unit_n;
+            if target_unit_n % 10000 == 0 {
+                println!("Synthesize {} unit(s) {}, {} ORE left.", target_unit_n, target_chemical, ore_unit_n);
+            }
+        }
+    }
+
+    pub fn decompose(&self, target_material: &Material) -> Result<u64, Error> {
+        let mut left_mats = HashMap::new();
+        let mut ore_unit_n = 0;
+        for _ in 0..target_material.unit_n {
+            ore_unit_n += self.decompose_one_unit(&target_material.chemical, &mut left_mats)?;
+        }
+
+        Ok(ore_unit_n)
+    }
+
+    pub fn decompose_one_unit(&self, target_chemical: &Chemical, left_mats: &mut HashMap<Chemical, u64>) -> Result<u64, Error> {
+        let mut decom_mats = HashMap::from([(target_chemical.clone(), 1)]);
         let final_chemical = Chemical::new("ORE");
         while decom_mats.len() > 1
             || !decom_mats
