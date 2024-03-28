@@ -20,7 +20,10 @@ fn main() {
         }
     };
 
-    let io_dev = SeqIODevice::new(Autopilot::new());
+    let io_dev = SeqIODevice::new(Autopilot::new(
+        Vec::new(),
+        Box::new(|ap| ap.oxygen_sys_pos().is_some()),
+    ));
     let mut computer = SeqIntCodeComputer::new(false);
     match computer.execute_with_io(&int_code, io_dev.input_device(), io_dev.output_device()) {
         Ok(res) => {

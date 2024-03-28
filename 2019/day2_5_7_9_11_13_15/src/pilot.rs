@@ -11,6 +11,11 @@ use crate::int_code::io::{InputPort, OutputPort};
 #[derive(Debug)]
 pub enum Error {
     UnknownMoveResult(i64, Direction, Position),
+    InvalidInitMoves {
+        cur_pos: Position,
+        move_steps: usize,
+        init_moves: Vec<Direction>,
+    },
 }
 
 impl Display for Error {
@@ -20,6 +25,15 @@ impl Display for Error {
                 f,
                 "Get unknown move result({}) when try to move to {:?} of {:?}",
                 res, dir, pos
+            ),
+            Error::InvalidInitMoves {
+                cur_pos,
+                move_steps,
+                init_moves,
+            } => write!(
+                f,
+                "Knock into a wall at {}, after {} steps of invalid initial moves({:?})",
+                cur_pos, move_steps, init_moves
             ),
         }
     }
@@ -120,25 +134,42 @@ impl Position {
 
 pub struct Autopilot {
     map: HashMap<Position, (Option<Direction>, TileType)>,
+    search_org: Option<Position>,
     cur_pos: Position,
     oxygen_sys_pos: Option<Position>,
     last_move_dir: Option<Direction>,
     search_plan: LinkedList<(Position, Direction)>,
     move_plan: LinkedList<Direction>,
+    init_moves: Vec<Direction>,
+    init_move_ind: usize,
+    is_end: Box<dyn Fn(&Self) -> bool>,
 }
 
 impl Autopilot {
-    pub fn new() -> Self {
+    pub fn new(init_moves: Vec<Direction>, is_end: Box<dyn Fn(&Self) -> bool>) -> Self {
         let mut res = Self {
             map: HashMap::new(),
+            search_org: None,
             cur_pos: Position::origin(),
             oxygen_sys_pos: None,
             last_move_dir: None,
             search_plan: LinkedList::new(),
             move_plan: LinkedList::new(),
+            init_moves,
+            init_move_ind: 0,
+            is_end,
         };
-        res.search_cur_neighbor();
+
+        if res.init_moves.is_empty() {
+            res.search_cur_neighbor();
+            res.search_org = Some(res.cur_pos);
+        }
+
         res
+    }
+
+    pub fn cur_pos(&self) -> Position {
+        self.cur_pos
     }
 
     pub fn oxygen_sys_pos(&self) -> Option<Position> {
@@ -148,7 +179,7 @@ impl Autopilot {
     pub fn moves_from_origin(&self, pos: &Position) -> Vec<Direction> {
         let mut moves = Vec::new();
         let mut cur_pos = *pos;
-        let origin = Position::origin();
+        let origin = self.search_org.unwrap();
         while cur_pos != origin {
             if let Some((dir_op, tile_type)) = self.map.get(&cur_pos) {
                 debug_assert!(*tile_type != TileType::Wall);
@@ -170,7 +201,7 @@ impl Autopilot {
     pub fn moves_to_origin(&self, pos: &Position) -> Vec<Direction> {
         let mut moves = Vec::new();
         let mut cur_pos = *pos;
-        let origin = Position::origin();
+        let origin = self.search_org.unwrap();
         while cur_pos != origin {
             if let Some((dir_op, tile_type)) = self.map.get(&cur_pos) {
                 debug_assert!(*tile_type != TileType::Wall);
@@ -179,7 +210,7 @@ impl Autopilot {
                 cur_pos = cur_pos.move_along(rev_dir);
             } else {
                 panic!(
-                    "Unexpected break(at {:?}) in path from {:?} to {:?}",
+                    "Unexpected break(at {}) in path from {} to {}",
                     cur_pos, pos, origin
                 );
             }
@@ -196,13 +227,13 @@ impl Autopilot {
     }
 
     fn plan_moves_to(&mut self, target_pos: &Position, final_dir: Direction) {
-        if self.cur_pos != Position::origin() {
+        if self.cur_pos != self.search_org.unwrap() {
             // Move to origin along known shortest path.
             self.move_plan
                 .extend(self.moves_to_origin(&self.cur_pos).iter());
         }
 
-        if *target_pos != Position::origin() {
+        if *target_pos != self.search_org.unwrap() {
             // Move from origin to target position along known shortest path.
             let known_nearest_pos = target_pos.move_along(final_dir.reverse());
             let mut origin_to_target = self.moves_from_origin(&known_nearest_pos);
@@ -240,10 +271,22 @@ impl Autopilot {
 impl InputPort for Autopilot {
     fn get(&mut self) -> Option<i64> {
         if let Some((_, TileType::OxygenSystem)) = self.map.get(&self.cur_pos) {
-            // Found oxygen system, end the program by blocking it with empty input.
-            debug_assert!(self.oxygen_sys_pos.is_none());
-            self.oxygen_sys_pos = Some(self.cur_pos);
+            if self.oxygen_sys_pos.is_none() {
+                // Found the oxygen system, update state.
+                self.oxygen_sys_pos = Some(self.cur_pos);
+            }
+        }
+
+        if (self.is_end)(self) {
+            // End condition reached, ends the program by blocking it with empty input.
             return None;
+        }
+
+        if self.init_move_ind < self.init_moves.len() {
+            // Move along the initial moves first.
+            let dir = self.init_moves[self.init_move_ind];
+            self.init_move_ind += 1;
+            return Some(self.try_move(dir).int_value().into());
         }
 
         if let Some(dir) = self.move_plan.pop_front() {
@@ -272,10 +315,28 @@ impl InputPort for Autopilot {
 impl OutputPort for Autopilot {
     fn put(&mut self, value: i64) -> Result<(), crate::Error> {
         let expected_pos = self.cur_pos.move_along(self.last_move_dir.unwrap());
+        if self.init_move_ind < self.init_moves.len() {
+            // Skip further process before finish the initial moves.
+            if value == 0 {
+                let error = Error::InvalidInitMoves {
+                    cur_pos: expected_pos,
+                    move_steps: self.init_move_ind,
+                    init_moves: self.init_moves.clone(),
+                };
+                return Err(crate::Error::IOProcessError(error.to_string()));
+            }
+
+            self.cur_pos = expected_pos;
+            return Ok(());
+        } else if self.search_org.is_none() {
+            // Reach origin of search, update state.
+            self.search_org = Some(expected_pos);
+        }
+
         match value {
             0 => {
                 // Move failed, hit wall.
-                debug_assert!(expected_pos != Position::origin());
+                debug_assert!(expected_pos != self.search_org.unwrap());
                 self.map.entry(expected_pos).or_insert_with(|| {
                     println!("Observed position({}), it's a wall.", expected_pos);
                     (self.last_move_dir, TileType::Wall)
@@ -284,7 +345,7 @@ impl OutputPort for Autopilot {
             1 | 2 => {
                 // Move successfully.
                 self.cur_pos = expected_pos;
-                let dir_op = if self.cur_pos != Position::origin() {
+                let dir_op = if self.cur_pos != self.search_org.unwrap() {
                     self.last_move_dir
                 } else {
                     None
