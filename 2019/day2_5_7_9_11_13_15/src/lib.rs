@@ -4,6 +4,7 @@ pub mod amp;
 pub mod arcade;
 pub mod int_code;
 pub mod paint;
+pub mod pilot;
 
 #[derive(Debug)]
 pub enum Error {
