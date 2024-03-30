@@ -1,12 +1,8 @@
 use std::{
-    cell::RefCell,
-    error,
-    fmt::Display,
-    fs::File,
-    io::{self, BufRead, BufReader},
-    iter,
-    path::Path,
+    cell::RefCell, error, fmt::Display, fs::File, io::{self, BufRead, BufReader}, path::Path, sync::{Arc, RwLock}
 };
+
+use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelBridge, ParallelIterator};
 
 #[derive(Debug)]
 pub enum Error {
@@ -37,66 +33,116 @@ impl Display for Error {
 
 impl error::Error for Error {}
 
+
+struct OffsetWndIter {
+    offset: usize,
+    wnd_width: usize,
+    cycle_width: usize,
+    end: usize,
+    wnd_ind: usize,
+    cycle_ind: usize,
+}
+
+impl OffsetWndIter {
+    pub fn new(offset: usize, wnd_width: usize, cycle_width: usize, end: usize) -> Self {
+        Self { offset, wnd_width, cycle_width, end, wnd_ind: 0, cycle_ind: 0 }
+    }
+}
+
+impl Iterator for OffsetWndIter {
+    type Item = usize;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let ind = self.offset + self.cycle_width * self.cycle_ind + self.wnd_ind;
+        self.wnd_ind = if self.wnd_ind + 1 < self.wnd_width {
+            self.wnd_ind + 1
+        } else {
+            self.cycle_ind += 1;
+            0
+        };
+
+        if ind < self.end {
+            Some(ind)
+        } else {
+            None
+        }
+    }
+}
+
+
+struct Pattern {
+    pat_ind: usize,
+    signal_len: usize,
+}
+
+impl Pattern {
+    pub fn new(pat_ind: usize, signal_len: usize) -> Self {
+        Self { pat_ind, signal_len }
+    }
+
+    pub fn one_ind_iter(&self) -> impl Iterator<Item = usize> {
+        OffsetWndIter::new(self.pat_ind, self.pat_ind + 1, (self.pat_ind + 1) * 4, self.signal_len)
+    }
+
+    pub fn neg_one_ind_iter(&self) -> impl Iterator<Item = usize> {
+        OffsetWndIter::new(self.pat_ind + (self.pat_ind + 1) * 2, self.pat_ind + 1, (self.pat_ind + 1) * 4, self.signal_len)
+    }
+}
+
+
+
 pub struct FFT {
-    patterns: Vec<Vec<i32>>,
+    // outputs: Arc<RwLock<Vec<u32>>>,
     outputs: RefCell<Vec<u32>>,
 }
 
 impl FFT {
     pub fn new(signal_len: usize) -> Self {
         Self {
-            patterns: Self::gen_patterns(signal_len),
+            // outputs: Arc::new(RwLock::new(vec![0; signal_len])),
             outputs: RefCell::new(vec![0; signal_len]),
         }
     }
 
     pub fn process_n(&self, signal: &mut [u32], phase_count: usize) -> Result<(), Error> {
         let signal_len = signal.len();
-        if signal_len != self.patterns.len() {
-            return Err(Error::WrongSignalLen(signal_len, self.patterns.len()));
+        // let outputs_len = self.outputs.read().unwrap().len();
+        let outputs_len = self.outputs.borrow().len();
+        if signal_len != outputs_len {
+            return Err(Error::WrongSignalLen(signal_len, outputs_len));
         }
 
-        unsafe {
-            let signal_ptr = signal.as_mut_ptr();
-            let outputs_ptr = self.outputs.borrow_mut().as_mut_ptr();
+        // Process one phase.
+        fn process(inputs: &[u32], outputs: &mut [u32]) {
+            outputs.par_iter_mut().enumerate().for_each(|(ind, d)| {
+                let pattern = Pattern::new(ind, inputs.len());
+                let one_sum: i32 = pattern.one_ind_iter().par_bridge().map(|ind| inputs[ind] as i32).sum();
+                let negative_one_sum: i32 = pattern.neg_one_ind_iter().par_bridge().map(|ind| inputs[ind] as i32).sum();
+    
+                *d = u32::try_from((one_sum - negative_one_sum).abs() % 10).unwrap();
+            });
+        }
 
-            for p_ind in 0..phase_count {
-                let (inputs, outputs) = if p_ind % 2 == 0 {
-                    (signal_ptr, outputs_ptr)
-                } else {
-                    (outputs_ptr, signal_ptr)
-                };
+        println!("Process begins.");
+        for p_ind in 0..phase_count {
+            if p_ind % 2 == 0 {
+                // Even, signal -> self.outputs
+                process(&signal, &mut self.outputs.borrow_mut());
+            } else {
+                // Odd, self.outputs -> signal
+                process(&self.outputs.borrow(), signal);
+            };
 
-                for i in 0..signal_len {
-                    let mut sum = 0;
-                    let pattern_len = self.patterns[i].len();
-                    for j in 0..signal_len {
-                        sum += (*inputs.add(j) as i32) * self.patterns[i][(j + 1) % pattern_len];
-                    }
-
-                    *outputs.add(i) = u32::try_from(sum.abs() % 10).unwrap();
-                }
-            }
+            println!("Phase {} completed.", p_ind);
         }
 
         if phase_count % 2 == 1 {
+            // Odd, result is in self.outputs, copy back to given signal
             signal.copy_from_slice(&self.outputs.borrow());
         }
+        println!("Process ends.");
 
         Ok(())
-    }
-
-    fn gen_patterns(signal_len: usize) -> Vec<Vec<i32>> {
-        (1..=signal_len)
-            .map(|i| {
-                iter::repeat(0)
-                    .take(i)
-                    .chain(iter::repeat(1).take(i))
-                    .chain(iter::repeat(0).take(i))
-                    .chain(iter::repeat(-1).take(i))
-                    .collect::<Vec<_>>()
-            })
-            .collect::<Vec<_>>()
     }
 }
 
