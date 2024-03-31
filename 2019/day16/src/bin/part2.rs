@@ -1,4 +1,4 @@
-use day16::{read_signal, Error, FFT};
+use day16::{read_signal, Error, PartialFFT, RepeatSignal};
 
 fn main() -> Result<(), Error> {
     let input_path = "inputs.txt";
@@ -7,32 +7,23 @@ fn main() -> Result<(), Error> {
         input_path
     ));
 
-    let output_offset = signal.iter().take(7).fold(0, |acc, ele| acc * 10 + ele);
+    let output_offset = signal
+        .iter()
+        .take(7)
+        .fold(0, |acc, ele| acc * 10 + (*ele as usize));
     let phase_count = 100;
     let rep_count = 10000;
-    let mut signal = rep_signal(&signal, rep_count);
-    let fft = FFT::new(signal.len());
-    fft.process_n(&mut signal, phase_count)?;
+    let signal = RepeatSignal::new(&signal, rep_count);
+    let pfft = PartialFFT::new(output_offset, &signal, phase_count);
 
-    let offset_eight_digits = signal
-        .iter()
-        .skip(output_offset as usize)
+    let offset_eight_digits = (output_offset..)
         .take(8)
-        .map(|d| char::from_digit(*d, 10).unwrap())
-        .collect::<String>();
+        .map(|ind| pfft.nth_ele(ind).map(|e| char::from_digit(e, 10).unwrap()))
+        .collect::<Result<String, Error>>()?;
     println!(
-        "After {} phases, the offset({}) eight signal digits are {}",
+        "After {} phases, the offset({}) eight signal digits are {}.",
         phase_count, output_offset, offset_eight_digits
     );
 
     Ok(())
-}
-
-fn rep_signal(signal: &[u32], rep_count: usize) -> Vec<u32> {
-    let mut res = Vec::with_capacity(signal.len() * rep_count);
-    for _ in 0..rep_count {
-        res.extend(signal)
-    }
-
-    res
 }

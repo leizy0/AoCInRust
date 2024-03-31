@@ -1,4 +1,4 @@
-use day16::{read_signal, Error, FFT};
+use day16::{read_signal, Error, FullFFT};
 
 fn main() -> Result<(), Error> {
     let input_path = "inputs.txt";
@@ -8,7 +8,7 @@ fn main() -> Result<(), Error> {
     ));
 
     let phase_count = 100;
-    let fft = FFT::new(signal.len());
+    let fft = FullFFT::new(signal.len());
     fft.process_n(&mut signal, phase_count)?;
 
     let first_eight_digits = signal
@@ -17,7 +17,7 @@ fn main() -> Result<(), Error> {
         .map(|d| char::from_digit(*d, 10).unwrap())
         .collect::<String>();
     println!(
-        "After {} phases, the first eight signal digits are {}",
+        "After {} phases, the first eight signal digits are {}.",
         phase_count, first_eight_digits
     );
 
