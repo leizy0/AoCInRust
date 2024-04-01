@@ -2,6 +2,7 @@ use std::fmt::Display;
 
 pub mod amp;
 pub mod arcade;
+pub mod ascii;
 pub mod int_code;
 pub mod paint;
 pub mod pilot;
