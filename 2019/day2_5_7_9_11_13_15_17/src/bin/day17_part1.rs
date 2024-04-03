@@ -25,7 +25,7 @@ fn main() -> Result<(), Error> {
             output_dev.check(|ap| {
                 let scaffold_map = ScaffoldMap::try_from_ints(ap.data().iter().copied())?;
                 let intersections = scaffold_map.intersections();
-                let align_para_sum: usize = intersections.iter().map(|(x, y)| x * y).sum();
+                let align_para_sum: usize = intersections.iter().map(|pos| pos.x() * pos.y()).sum();
                 println!(
                     "There are {} intersctions, the sum of the alignment parameters is {}.",
                     intersections.len(),
