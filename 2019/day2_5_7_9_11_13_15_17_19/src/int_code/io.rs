@@ -333,4 +333,8 @@ impl Channel {
     pub fn data(&self) -> &VecDeque<i64> {
         &self.data
     }
+
+    pub fn data_mut(&mut self) -> &mut VecDeque<i64> {
+        &mut self.data
+    }
 }
