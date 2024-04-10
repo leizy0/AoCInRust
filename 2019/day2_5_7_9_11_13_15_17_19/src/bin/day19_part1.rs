@@ -10,7 +10,13 @@ fn main() -> Result<(), Error> {
     let mut scanner = Scanner::new(int_code);
     let scan_area_width = 50;
     let scan_area_hight = 50;
-    let area = scanner.scan(0..scan_area_width, 0..scan_area_hight)?;
+    let area = scanner.scan_area(0..scan_area_width, 0..scan_area_hight)?;
+    println!(
+        "Area((0, 0), ({}, {})) scaned:\n{}",
+        scan_area_width - 1,
+        scan_area_hight - 1,
+        area
+    );
     println!(
         "There are {} point(s) been affected by tractor beam in area({} x {}).",
         area.iter().filter(|pt| **pt == PointType::Pulled).count(),
