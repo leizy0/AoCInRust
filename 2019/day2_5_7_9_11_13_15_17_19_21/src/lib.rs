@@ -7,6 +7,7 @@ pub mod beam;
 pub mod int_code;
 pub mod paint;
 pub mod pilot;
+pub mod spring;
 
 #[derive(Debug)]
 pub enum Error {
