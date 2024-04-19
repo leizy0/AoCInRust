@@ -8,16 +8,21 @@ fn main() {
     let int_code = read_int_code(input_path)
         .inspect_err(|e| eprintln!("Failed to read intcode from given input, get error({}).", e))
         .unwrap();
-    // (!A || !B || !C) && D
+    // (!A || !B || (A && B && !C && (E || H))) && D
     let script = vec![
+        SSInstruction::or(RRegister::E, WRegister::T),
+        SSInstruction::or(RRegister::H, WRegister::T),
+        SSInstruction::not(RRegister::C, WRegister::J),
+        SSInstruction::and(RRegister::T, WRegister::J),
+        SSInstruction::and(RRegister::A, WRegister::J),
+        SSInstruction::and(RRegister::B, WRegister::J),
         SSInstruction::not(RRegister::A, WRegister::T),
-        SSInstruction::not(RRegister::B, WRegister::J),
         SSInstruction::or(RRegister::T, WRegister::J),
-        SSInstruction::not(RRegister::C, WRegister::T),
+        SSInstruction::not(RRegister::B, WRegister::T),
         SSInstruction::or(RRegister::T, WRegister::J),
         SSInstruction::and(RRegister::D, WRegister::J),
     ];
-    let io_dev = SeqIODevice::new(HullDetector::new(&script, DetectMode::Walk));
+    let io_dev = SeqIODevice::new(HullDetector::new(&script, DetectMode::Run));
     let mut computer = SeqIntCodeComputer::new(false);
     match computer.execute_with_io(&int_code, io_dev.input_device(), io_dev.output_device()) {
         Ok(res) => {

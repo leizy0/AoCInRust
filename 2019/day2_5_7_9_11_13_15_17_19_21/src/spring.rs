@@ -11,17 +11,28 @@ pub enum Error {
 impl Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::MultipleDamageInDetection(last_d, cur_v) => write!(f, "Multiple damage value({} -> {}) returned by hull detection program", last_d, cur_v),
-            Error::InvalidOutputInDetection(v) => write!(f, "Invalid output value({}) in hull detection program.", v),
+            Error::MultipleDamageInDetection(last_d, cur_v) => write!(
+                f,
+                "Multiple damage value({} -> {}) returned by hull detection program",
+                last_d, cur_v
+            ),
+            Error::InvalidOutputInDetection(v) => {
+                write!(f, "Invalid output value({}) in hull detection program.", v)
+            }
         }
     }
 }
 
 pub enum RRegister {
-    A, // ground detector(1 distance away)
-    B, // ground detector(2 distance away)
-    C, // ground detector(3 distance away)
-    D, // ground detector(4 distance away)
+    A, // ground detector(1 tiles ahead)
+    B, // ground detector(2 tiles ahead)
+    C, // ground detector(3 tiles ahead)
+    D, // ground detector(4 tiles ahead)
+    E, // ground detector(5 tiles ahead)
+    F, // ground detector(6 tiles ahead)
+    G, // ground detector(7 tiles ahead)
+    H, // ground detector(8 tiles ahead)
+    I, // ground detector(9 tiles ahead)
     T, // Temporary
     J, // Jump
 }
@@ -33,6 +44,11 @@ impl Display for RRegister {
             RRegister::B => 'B',
             RRegister::C => 'C',
             RRegister::D => 'D',
+            RRegister::E => 'E',
+            RRegister::F => 'F',
+            RRegister::G => 'G',
+            RRegister::H => 'H',
+            RRegister::I => 'I',
             RRegister::T => 'T',
             RRegister::J => 'J',
         };
@@ -87,24 +103,41 @@ impl SSInstruction {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum DetectMode {
+    Walk,
+    Run,
+}
+
+impl Display for DetectMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DetectMode::Walk => write!(f, "WALK"),
+            DetectMode::Run => write!(f, "RUN"),
+        }
+    }
+}
+
 pub struct HullDetector {
     script_chars: Vec<char>,
+    mode: DetectMode,
     input_ind: usize,
     damage: Option<usize>,
     log: String,
 }
 
 impl HullDetector {
-    pub fn new(script: &[SSInstruction]) -> Self {
+    pub fn new(script: &[SSInstruction], mode: DetectMode) -> Self {
         let script_chars = script
             .iter()
             .map(|inst| inst.to_string())
-            .chain(iter::once("WALK".to_string()))
+            .chain(iter::once(mode.to_string()))
             .flat_map(|s| s.chars().chain(iter::once('\n')).collect::<Vec<_>>())
             .collect::<Vec<_>>();
 
         Self {
             script_chars,
+            mode,
             input_ind: 0,
             damage: None,
             log: String::new(),
@@ -122,7 +155,11 @@ impl HullDetector {
 
 impl InputPort for HullDetector {
     fn get(&mut self) -> Option<i64> {
-        let res = self.script_chars.get(self.input_ind).map(|c| *c as i64);
+        let res = self.script_chars.get(self.input_ind).map(|c| {
+            // Echo input to log.
+            self.log.push(*c);
+            *c as i64
+        });
         if self.input_ind < self.script_chars.len() {
             self.input_ind += 1;
         }
