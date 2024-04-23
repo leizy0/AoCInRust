@@ -19,10 +19,16 @@ fn main() {
     // let target_ind = 3293usize;
     let mut shuffle_map_link = vec![target_ind];
     let mut cur_ind = deck.shuffle_map_to(&techs, target_ind);
+    let mut map_count = 0usize;
     while cur_ind != target_ind {
         shuffle_map_link.push(cur_ind);
         cur_ind = deck.shuffle_map_to(&techs, cur_ind);
+        map_count += 1;
+        if map_count % 1000000 == 0 {
+            println!("Mapped {} time(s).", map_count);
+        }
     }
+    println!("There are {} elements in the map link.", shuffle_map_link.len());
 
     let shuffle_count = 101741582076661usize;
     // let shuffle_count = 1usize;

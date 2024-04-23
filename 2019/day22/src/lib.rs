@@ -1,5 +1,5 @@
 use std::{
-    env::args, error, fmt::Display, fs::File, io::{self, BufRead, BufReader}, path::Path
+    env::args, error, fmt::Display, fs::File, io::{self, BufRead, BufReader}, ops::Rem, path::Path
 };
 
 use once_cell::sync::Lazy;
@@ -106,31 +106,36 @@ impl ShuffleTech {
     }
 
     fn inc_map_to(inc_u: u32, ind: usize, cards_n: usize) -> usize {
-        let inc_u = usize::try_from(inc_u).unwrap();
-        let cards_quo = cards_n / inc_u;
-        let cards_rem = cards_n % inc_u;
-        let target_rem = if ind % inc_u == 0 {
-            0
+        let (gcd, (_, u_factor)) = Self::pulverize(isize::try_from(cards_n).unwrap(), isize::try_from(inc_u).unwrap());
+        debug_assert!(ind % gcd == 0);
+
+        let lcm_u_factor = i128::try_from(cards_n / gcd).unwrap();
+        let ind_u_factor = i128::try_from(u_factor).unwrap() * i128::try_from(ind / gcd).unwrap();
+        if ind_u_factor < 0 {
+            // Add enough inc_u to make u_factor positive.
+            usize::try_from(ind_u_factor % lcm_u_factor + lcm_u_factor)
         } else {
-            inc_u - ind % inc_u
-        };
+            usize::try_from(ind_u_factor % lcm_u_factor)
+        }.unwrap()
+    }
 
-        let mut wrap_count = 0usize;
-        let mut wrap_n = 0;
-        while wrap_n != target_rem {
-            let next_wrap_n = wrap_n + cards_rem;
-            wrap_n = if next_wrap_n >= inc_u {
-                next_wrap_n - inc_u
-            } else {
-                next_wrap_n
-            };
-            wrap_count += 1;
+    fn pulverize(n: isize, d: isize) -> (usize, (isize, isize)) {
+        let mut n = n.abs();
+        let mut d = d.abs();
+        let mut n_factor = (1, 0);
+        let mut d_factor = (0, 1);
+
+        while d != 0 {
+            let quo = n / d;
+            let rem = n % d;
+            let new_d_factor = (n_factor.0 - quo * d_factor.0, n_factor.1 - quo * d_factor.1);
+            n_factor = d_factor;
+            d_factor = new_d_factor;
+            n = d;
+            d = rem;
         }
-
-        let origin_ind = (wrap_count * cards_rem + ind) / inc_u + wrap_count * cards_quo;
-        debug_assert!(Self::inc_map_from(inc_u as u32, origin_ind, cards_n) == ind);
-
-        origin_ind
+        
+        (usize::try_from(n).unwrap(), n_factor)
     }
 
     fn try_into_new_stack(s: &str) -> Option<Result<Self, Error>> {
