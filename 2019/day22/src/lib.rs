@@ -1,10 +1,5 @@
 use std::{
-    collections::VecDeque,
-    error,
-    fmt::Display,
-    fs::File,
-    io::{self, BufRead, BufReader},
-    path::Path,
+    env::args, error, fmt::Display, fs::File, io::{self, BufRead, BufReader}, path::Path
 };
 
 use once_cell::sync::Lazy;
@@ -65,6 +60,79 @@ impl TryFrom<&str> for ShuffleTech {
 }
 
 impl ShuffleTech {
+    pub fn map_from(&self, ind: usize, cards_n: usize) -> usize {
+        assert!(ind < cards_n);
+        match self {
+            ShuffleTech::NewStack => cards_n - 1 - ind,
+            ShuffleTech::Cut(i) => Self::cut_map_from(*i, ind, cards_n),
+            ShuffleTech::Increment(u) => Self::inc_map_from(*u, ind, cards_n),
+        }
+    }
+
+    pub fn map_to(&self, ind: usize, cards_n: usize) -> usize {
+        assert!(ind < cards_n);
+        match self {
+            ShuffleTech::NewStack => cards_n - 1 - ind,
+            ShuffleTech::Cut(i) => Self::cut_map_from(-i, ind, cards_n),
+            ShuffleTech::Increment(u) => Self::inc_map_to(*u, ind, cards_n),
+        }
+    }
+
+    fn cut_map_from(cut_i: i32, ind: usize, cards_n: usize) -> usize {
+        let i_abs = usize::try_from(cut_i.abs()).unwrap() % cards_n;
+        if cut_i > 0 {
+            if ind < i_abs {
+                // Be cut, and appended to the end.
+                ind + cards_n - i_abs
+            } else {
+                // not be cut, move forward.
+                ind - i_abs
+            }
+        } else if cut_i < 0 {
+            if ind < cards_n - i_abs {
+                // not be cut, move backward.
+                ind + i_abs
+            } else {
+                // Be cut, and inserted into start.
+                ind - (cards_n - i_abs)
+            }
+        } else {
+            ind
+        }
+    }
+
+    fn inc_map_from(inc_u: u32, ind: usize, cards_n: usize) -> usize {
+        ind * usize::try_from(inc_u).unwrap() % cards_n
+    }
+
+    fn inc_map_to(inc_u: u32, ind: usize, cards_n: usize) -> usize {
+        let inc_u = usize::try_from(inc_u).unwrap();
+        let cards_quo = cards_n / inc_u;
+        let cards_rem = cards_n % inc_u;
+        let target_rem = if ind % inc_u == 0 {
+            0
+        } else {
+            inc_u - ind % inc_u
+        };
+
+        let mut wrap_count = 0usize;
+        let mut wrap_n = 0;
+        while wrap_n != target_rem {
+            let next_wrap_n = wrap_n + cards_rem;
+            wrap_n = if next_wrap_n >= inc_u {
+                next_wrap_n - inc_u
+            } else {
+                next_wrap_n
+            };
+            wrap_count += 1;
+        }
+
+        let origin_ind = (wrap_count * cards_rem + ind) / inc_u + wrap_count * cards_quo;
+        debug_assert!(Self::inc_map_from(inc_u as u32, origin_ind, cards_n) == ind);
+
+        origin_ind
+    }
+
     fn try_into_new_stack(s: &str) -> Option<Result<Self, Error>> {
         if s == "deal into new stack" {
             Some(Ok(Self::NewStack))
@@ -96,55 +164,42 @@ impl ShuffleTech {
 }
 
 pub struct Deck {
-    cards: VecDeque<u32>,
+    cards_n: usize,
 }
 
 impl Deck {
-    pub fn new(n: u32) -> Self {
+    pub fn new(cards_n: usize) -> Self {
         Self {
-            cards: (0..n).collect::<VecDeque<_>>(),
+            cards_n,
         }
     }
 
-    pub fn shuffle(&mut self, tech: &ShuffleTech) {
-        match tech {
-            ShuffleTech::NewStack => self.reverse(),
-            ShuffleTech::Cut(i) => {
-                if *i < 0 {
-                    self.cards.rotate_right(usize::try_from(i.abs()).unwrap());
-                } else if *i > 0 {
-                    self.cards.rotate_left(usize::try_from(*i).unwrap());
-                }
-            }
-            ShuffleTech::Increment(u) => self.increment(*u),
-        }
-    }
-
-    pub fn find(&self, n: u32) -> Option<usize> {
-        self.cards.iter().position(|c| *c == n)
-    }
-
-    fn reverse(&mut self) {
-        let len = self.cards.len();
-        for i in 0..((len + 1) / 2) {
-            self.cards.swap(i, len - 1 - i);
-        }
-    }
-
-    fn increment(&mut self, n: u32) {
-        let cards_n = self.cards.len();
-        let mut new_cards = VecDeque::new();
-        new_cards.resize(cards_n, 0);
-
-        let mut ind = 0;
-        let mut new_ind = 0;
-        while ind < cards_n {
-            new_cards[new_ind] = self.cards[ind];
-            new_ind = (new_ind + n as usize) % cards_n;
-            ind += 1;
+    pub fn shuffle_map_from(&self, techs: &[ShuffleTech], mut origin_ind: usize) -> usize {
+        for tech in techs.iter() {
+            origin_ind = tech.map_from(origin_ind, self.cards_n);
         }
 
-        self.cards = new_cards;
+        origin_ind
+    }
+
+    pub fn shuffle_map_to(&self, techs: &[ShuffleTech], mut target_ind: usize) -> usize {
+        for tech in techs.iter().rev() {
+            target_ind = tech.map_to(target_ind, self.cards_n);
+        }
+
+        target_ind
+    }
+}
+
+pub fn check_args() -> Result<String, Error> {
+    let args_n = args().len();
+    let expect_n = 2;
+    if args_n != expect_n {
+        eprintln!("Wrong number of arguments, expect one.");
+        println!("Usage: {} INPUT_FILE_PATH", args().next().unwrap());
+        Err(Error::WrongNumberOfArgs(args_n, expect_n))
+    } else {
+        Ok(args().skip(1).next().unwrap().to_string())
     }
 }
 
