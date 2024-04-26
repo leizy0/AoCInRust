@@ -1,4 +1,4 @@
-use day22::{self, Deck};
+use day22::{self, ShuffleDeck};
 
 fn main() {
     let input_path = day22::check_args().expect("Wrong arguments, no input path found.");
@@ -11,10 +11,10 @@ fn main() {
         })
         .unwrap();
     let cards_n = 10007;
-    let deck = Deck::new(cards_n);
+    let deck = ShuffleDeck::new(&techs, cards_n);
 
     let origin_ind = 2019;
-    let target_ind = deck.shuffle_map_from(&techs, origin_ind);
+    let target_ind = deck.map_from(origin_ind);
     println!(
         "After shuffle, card(#{}) is at [{}] in deck with {} cards.",
         origin_ind, target_ind, cards_n

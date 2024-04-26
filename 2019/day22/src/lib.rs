@@ -1,5 +1,5 @@
 use std::{
-    cell::RefCell, collections::HashMap, env::args, error, fmt::Display, fs::File, io::{self, BufRead, BufReader}, path::Path
+    env::args, error, fmt::Display, fs::File, io::{self, BufRead, BufReader}, path::Path
 };
 
 use once_cell::sync::Lazy;
@@ -179,41 +179,96 @@ impl ShuffleTech {
     }
 }
 
-pub struct Deck {
+#[derive(Debug)]
+pub struct ShuffleDeck {
     cards_n: usize,
-    inc_map_to_cache: RefCell<HashMap<u32, Vec<Option<usize>>>>,
+    ind_factor: isize,
+    constant: isize,
 }
 
-impl Deck {
-    pub fn new(cards_n: usize) -> Self {
-        Self {
-            cards_n,
-            inc_map_to_cache: RefCell::new(HashMap::new()),
+impl ShuffleDeck {
+    pub fn new<'a, I: IntoIterator<Item = &'a ShuffleTech>>(iter: I, cards_n: usize) -> Self {
+        let init = Self { cards_n, ind_factor: 1, constant: 0 };
+        iter.into_iter().fold(init, |mut res, st| {
+            res.combine(st);
+            res
+        })
+    }
+
+    pub fn ind_factor(&self) -> isize {
+        self.ind_factor
+    }
+
+    pub fn constant(&self) -> isize {
+        self.constant
+    }
+
+    pub fn combine(&mut self, st: &ShuffleTech) {
+        match st {
+            ShuffleTech::NewStack => {
+                self.ind_factor = -self.ind_factor;
+                self.constant = -self.constant - 1;
+            },
+            ShuffleTech::Cut(c) => self.constant -= isize::try_from(*c).unwrap(),
+            ShuffleTech::Increment(i) => {
+                let i = isize::try_from(*i).unwrap();
+                let cards_n = isize::try_from(self.cards_n).unwrap();
+                self.ind_factor *= i;
+                self.ind_factor %= cards_n;
+                self.constant *= i;
+                self.constant %= cards_n;
+            },
         }
     }
 
-    pub fn shuffle_map_from(&self, techs: &[ShuffleTech], mut origin_ind: usize) -> usize {
-        for tech in techs.iter() {
-            origin_ind = tech.map_from(origin_ind, self.cards_n);
+    pub fn map_from(&self, ind: usize) -> usize {
+        let ind = i128::try_from(ind).unwrap();
+        let cards_n = i128::try_from(self.cards_n).unwrap();
+        let ind_factor = i128::try_from(self.ind_factor).unwrap();
+        let constant = i128::try_from(self.constant).unwrap();
+        let mut ind_rem = (ind * ind_factor + constant) % cards_n;
+        if ind_rem < 0 {
+            ind_rem += cards_n;
         }
+
+        usize::try_from(ind_rem).unwrap()
+    }
+
+    pub fn map_to(&self, target_ind: usize) -> usize {
+        let target_ind = isize::try_from(target_ind).unwrap();
+        let cards_n = isize::try_from(self.cards_n).unwrap();
+        let target_rem = (target_ind - self.constant) % cards_n;
+        let (gcd, (_, i_factor)) = Self::pulverize(cards_n, self.ind_factor);
+        let gcd = isize::try_from(gcd).unwrap();
+        let mut i_factor = i128::try_from(i_factor).unwrap();
+        i_factor *= i128::try_from(target_rem / gcd).unwrap();
+        let lcm_i_factor = (cards_n / gcd).abs();
+        let origin_ind = if i_factor < 0 {
+            usize::try_from(isize::try_from(i_factor % i128::try_from(lcm_i_factor).unwrap()).unwrap() + lcm_i_factor)
+        } else {
+            usize::try_from(i_factor % i128::try_from(lcm_i_factor).unwrap())
+        }.unwrap();
+        
+        debug_assert!(self.map_from(origin_ind) == usize::try_from(target_ind).unwrap());
 
         origin_ind
     }
 
-    pub fn shuffle_map_to(&self, techs: &[ShuffleTech], mut target_ind: usize) -> usize {
-        for tech in techs.iter().rev() {
-            match tech {
-                ShuffleTech::Increment(u) => {
-                    let inc_u = usize::try_from(*u).unwrap();
-                    let ind_rem = target_ind % inc_u;
-                    let start_ind = *self.inc_map_to_cache.borrow_mut().entry(*u).or_insert_with(|| vec![None; inc_u])[ind_rem].get_or_insert_with(|| tech.map_to(ind_rem, self.cards_n));
-                    target_ind = target_ind / inc_u + start_ind;
-                },
-                other => target_ind = other.map_to(target_ind, self.cards_n),
-            }
-        }
+    fn pulverize(mut n: isize, mut d: isize) -> (isize, (isize, isize)) {
+        let mut n_factor = (1, 0);
+        let mut d_factor = (0, 1);
 
-        target_ind
+        while d != 0 {
+            let quo = n / d;
+            let rem = n % d;
+            let new_d_factor = (n_factor.0 - quo * d_factor.0, n_factor.1 - quo * d_factor.1);
+            n_factor = d_factor;
+            d_factor = new_d_factor;
+            n = d;
+            d = rem;
+        }
+        
+        (n, n_factor)
     }
 }
 

@@ -1,4 +1,4 @@
-use day22::{self, Deck};
+use day22::{self, ShuffleDeck};
 
 fn main() {
     let input_path = day22::check_args().expect("Wrong arguments, no input path found.");
@@ -12,17 +12,17 @@ fn main() {
         .unwrap();
     let cards_n = 119315717514047usize;
     // let cards_n = 10007usize;
-    let deck = Deck::new(cards_n);
+    let deck = ShuffleDeck::new(techs.iter(), cards_n);
     let target_ind = 2020usize;
     // let target_ind = 3293usize;
     let shuffle_count = 101741582076661usize;
     // let shuffle_count = 1usize;
     let mut shuffle_map_cache = vec![target_ind];
-    let mut cur_ind = deck.shuffle_map_to(&techs, target_ind);
+    let mut cur_ind = deck.map_to(target_ind);
     let mut map_count = 1usize;
     let cache_interval = 5000000usize;
     while cur_ind != target_ind && map_count < shuffle_count {
-        cur_ind = deck.shuffle_map_to(&techs, cur_ind);
+        cur_ind = deck.map_to(cur_ind);
         map_count += 1;
         if map_count % cache_interval == 0 {
             shuffle_map_cache.push(cur_ind);
@@ -37,7 +37,7 @@ fn main() {
         cur_ind = shuffle_map_cache[cache_ind];
         let left_map_count = effective_shuffle_count % cache_interval;
         for _ in 0..left_map_count {
-            cur_ind = deck.shuffle_map_to(&techs, cur_ind);
+            cur_ind = deck.map_to(cur_ind);
         }
 
         cur_ind
