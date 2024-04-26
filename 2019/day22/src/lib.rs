@@ -1,5 +1,5 @@
 use std::{
-    env::args, error, fmt::Display, fs::File, io::{self, BufRead, BufReader}, ops::Rem, path::Path
+    cell::RefCell, collections::HashMap, env::args, error, fmt::Display, fs::File, io::{self, BufRead, BufReader}, path::Path
 };
 
 use once_cell::sync::Lazy;
@@ -106,17 +106,28 @@ impl ShuffleTech {
     }
 
     fn inc_map_to(inc_u: u32, ind: usize, cards_n: usize) -> usize {
-        let (gcd, (_, u_factor)) = Self::pulverize(isize::try_from(cards_n).unwrap(), isize::try_from(inc_u).unwrap());
-        debug_assert!(ind % gcd == 0);
-
-        let lcm_u_factor = i128::try_from(cards_n / gcd).unwrap();
-        let ind_u_factor = i128::try_from(u_factor).unwrap() * i128::try_from(ind / gcd).unwrap();
-        if ind_u_factor < 0 {
-            // Add enough inc_u to make u_factor positive.
-            usize::try_from(ind_u_factor % lcm_u_factor + lcm_u_factor)
+        let inc_u = usize::try_from(inc_u).unwrap();
+        let cards_quo = cards_n / inc_u;
+        let cards_rem = cards_n % inc_u;
+        let target_rem = if ind % inc_u == 0 {
+            0
         } else {
-            usize::try_from(ind_u_factor % lcm_u_factor)
-        }.unwrap()
+            inc_u - ind % inc_u
+        };
+
+        let (gcd, (_, mut c_factor)) = Self::pulverize(isize::try_from(inc_u).unwrap(), isize::try_from(cards_rem).unwrap());
+        let lcm_c_factor = isize::try_from(inc_u / gcd).unwrap();
+        c_factor *= isize::try_from(target_rem / gcd).unwrap();
+        let wrap_count = if c_factor < 0 {
+            usize::try_from(c_factor % lcm_c_factor + lcm_c_factor)
+        } else {
+            usize::try_from(c_factor % lcm_c_factor)
+        }.unwrap();
+
+        let origin_ind = (wrap_count * cards_rem + ind) / inc_u + wrap_count * cards_quo;
+        debug_assert!(Self::inc_map_from(inc_u as u32, origin_ind, cards_n) == ind);
+
+        origin_ind
     }
 
     fn pulverize(n: isize, d: isize) -> (usize, (isize, isize)) {
@@ -170,12 +181,14 @@ impl ShuffleTech {
 
 pub struct Deck {
     cards_n: usize,
+    inc_map_to_cache: RefCell<HashMap<u32, Vec<Option<usize>>>>,
 }
 
 impl Deck {
     pub fn new(cards_n: usize) -> Self {
         Self {
             cards_n,
+            inc_map_to_cache: RefCell::new(HashMap::new()),
         }
     }
 
@@ -189,7 +202,15 @@ impl Deck {
 
     pub fn shuffle_map_to(&self, techs: &[ShuffleTech], mut target_ind: usize) -> usize {
         for tech in techs.iter().rev() {
-            target_ind = tech.map_to(target_ind, self.cards_n);
+            match tech {
+                ShuffleTech::Increment(u) => {
+                    let inc_u = usize::try_from(*u).unwrap();
+                    let ind_rem = target_ind % inc_u;
+                    let start_ind = *self.inc_map_to_cache.borrow_mut().entry(*u).or_insert_with(|| vec![None; inc_u])[ind_rem].get_or_insert_with(|| tech.map_to(ind_rem, self.cards_n));
+                    target_ind = target_ind / inc_u + start_ind;
+                },
+                other => target_ind = other.map_to(target_ind, self.cards_n),
+            }
         }
 
         target_ind

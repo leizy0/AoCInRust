@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 use day22::{self, Deck};
 
 fn main() {
@@ -17,23 +15,36 @@ fn main() {
     let deck = Deck::new(cards_n);
     let target_ind = 2020usize;
     // let target_ind = 3293usize;
-    let mut shuffle_map_link = vec![target_ind];
+    let shuffle_count = 101741582076661usize;
+    // let shuffle_count = 1usize;
+    let mut shuffle_map_cache = vec![target_ind];
     let mut cur_ind = deck.shuffle_map_to(&techs, target_ind);
-    let mut map_count = 0usize;
-    while cur_ind != target_ind {
-        shuffle_map_link.push(cur_ind);
+    let mut map_count = 1usize;
+    let cache_interval = 5000000usize;
+    while cur_ind != target_ind && map_count < shuffle_count {
         cur_ind = deck.shuffle_map_to(&techs, cur_ind);
         map_count += 1;
-        if map_count % 1000000 == 0 {
+        if map_count % cache_interval == 0 {
+            shuffle_map_cache.push(cur_ind);
             println!("Mapped {} time(s).", map_count);
         }
     }
-    println!("There are {} elements in the map link.", shuffle_map_link.len());
+    println!("There are {} elements in the map cache.", shuffle_map_cache.len());
 
-    let shuffle_count = 101741582076661usize;
-    // let shuffle_count = 1usize;
-    let effective_shuffle_count = shuffle_count % shuffle_map_link.len();
-    let target_card_ind = shuffle_map_link[effective_shuffle_count];
+    let target_card_ind = if map_count < shuffle_count {
+        let effective_shuffle_count = shuffle_count % map_count;
+        let cache_ind = effective_shuffle_count / cache_interval;
+        cur_ind = shuffle_map_cache[cache_ind];
+        let left_map_count = effective_shuffle_count % cache_interval;
+        for _ in 0..left_map_count {
+            cur_ind = deck.shuffle_map_to(&techs, cur_ind);
+        }
+
+        cur_ind
+    } else {
+        cur_ind
+    };
+
     println!("After {} times shuffling, the card at [{}] in deck with {} cards is #{}.", shuffle_count, target_ind, cards_n, target_card_ind);
 }
 
