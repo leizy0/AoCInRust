@@ -1,4 +1,4 @@
-use day22::{self, ShuffleDeck};
+use day22::{self, CachedShuffleDeck};
 
 fn main() {
     let input_path = day22::check_args().expect("Wrong arguments, no input path found.");
@@ -12,7 +12,7 @@ fn main() {
         .unwrap();
     let cards_n = 119315717514047usize;
     // let cards_n = 10007usize;
-    let deck = ShuffleDeck::new(techs.iter(), cards_n);
+    let deck = CachedShuffleDeck::new(techs.iter(), cards_n);
     let target_ind = 2020usize;
     // let target_ind = 3293usize;
     let shuffle_count = 101741582076661usize;

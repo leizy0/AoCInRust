@@ -1,5 +1,5 @@
 use std::{
-    env::args, error, fmt::Display, fs::File, io::{self, BufRead, BufReader}, path::Path
+    cell::RefCell, env::args, error, fmt::Display, fs::File, io::{self, BufRead, BufReader}, iter, path::Path
 };
 
 use once_cell::sync::Lazy;
@@ -222,6 +222,7 @@ impl ShuffleDeck {
     }
 
     pub fn map_from(&self, ind: usize) -> usize {
+        assert!(ind < self.cards_n);
         let ind = i128::try_from(ind).unwrap();
         let cards_n = i128::try_from(self.cards_n).unwrap();
         let ind_factor = i128::try_from(self.ind_factor).unwrap();
@@ -235,6 +236,7 @@ impl ShuffleDeck {
     }
 
     pub fn map_to(&self, target_ind: usize) -> usize {
+        assert!(target_ind < self.cards_n);
         let target_ind = isize::try_from(target_ind).unwrap();
         let cards_n = isize::try_from(self.cards_n).unwrap();
         let target_rem = (target_ind - self.constant) % cards_n;
@@ -269,6 +271,68 @@ impl ShuffleDeck {
         }
         
         (n, n_factor)
+    }
+}
+
+pub struct CachedShuffleDeck {
+    cards_n: usize,
+    decks: Vec<ShuffleDeck>,
+    total_deck: ShuffleDeck,
+    map_to_cache: RefCell<Vec<Vec<Option<usize>>>>,
+}
+
+impl CachedShuffleDeck {
+    pub fn new<'a, I: IntoIterator<Item = &'a ShuffleTech>>(iter: I, cards_n: usize) -> Self {
+        const FACTOR_LIMIT: isize = 100;
+        let mut cur_deck = ShuffleDeck::new(iter::empty(), cards_n);
+        let mut total_deck = ShuffleDeck::new(iter::empty(), cards_n);
+        let mut decks = Vec::new();
+        let mut map_to_cache = Vec::new();
+        for tech in iter {
+            cur_deck.combine(tech);
+            total_deck.combine(tech);
+            let cur_factor_abs = cur_deck.ind_factor().abs();
+            if cur_factor_abs > FACTOR_LIMIT {
+                decks.push(cur_deck);
+                map_to_cache.push(vec![None; usize::try_from(cur_factor_abs).unwrap()]);
+                cur_deck = ShuffleDeck::new(iter::empty(), cards_n);
+            }
+        }
+        map_to_cache.push(vec![None; usize::try_from(cur_deck.ind_factor().abs()).unwrap()]);
+        decks.push(cur_deck);
+
+        Self { cards_n, decks, total_deck, map_to_cache: RefCell::new(map_to_cache) }
+    }
+
+    pub fn map_from(&self, ind: usize) -> usize {
+        self.total_deck.map_from(ind)
+    }
+
+    pub fn map_to(&self, target_ind: usize) -> usize {
+        let mut cur_ind = target_ind;
+        for (d_ind, deck) in self.decks.iter().enumerate().rev() {
+            let cache_ind = usize::try_from(isize::try_from(cur_ind).unwrap() % deck.ind_factor()).unwrap();
+            let mapped_start_ind = *self.map_to_cache.borrow_mut()[d_ind][usize::try_from(cache_ind).unwrap()].get_or_insert_with(|| deck.map_to(cache_ind));
+            let ind_offset = cur_ind / usize::try_from(deck.ind_factor().abs()).unwrap();
+            let prev_ind = if deck.ind_factor() > 0 {
+                if ind_offset + mapped_start_ind > self.cards_n {
+                    ind_offset + mapped_start_ind - self.cards_n
+                } else {
+                    ind_offset + mapped_start_ind
+                }
+            } else {
+                if mapped_start_ind < ind_offset {
+                    self.cards_n - ind_offset + mapped_start_ind
+                } else {
+                    mapped_start_ind - ind_offset
+                }
+            };
+            debug_assert!(deck.map_from(prev_ind) == cur_ind);
+            cur_ind = prev_ind;
+        }
+        debug_assert!(self.map_from(cur_ind) == target_ind);
+
+        cur_ind
     }
 }
 
