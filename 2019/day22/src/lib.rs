@@ -283,7 +283,7 @@ pub struct CachedShuffleDeck {
 
 impl CachedShuffleDeck {
     pub fn new<'a, I: IntoIterator<Item = &'a ShuffleTech>>(iter: I, cards_n: usize) -> Self {
-        const FACTOR_LIMIT: isize = 100;
+        const FACTOR_LIMIT: isize = 1000000;
         let mut cur_deck = ShuffleDeck::new(iter::empty(), cards_n);
         let mut total_deck = ShuffleDeck::new(iter::empty(), cards_n);
         let mut decks = Vec::new();
