@@ -1,4 +1,4 @@
-use day22::{self, ShuffleDeck};
+use day22::{self, DeckShuffle};
 
 fn main() {
     let input_path = day22::check_args().expect("Wrong arguments, no input path found.");
@@ -14,26 +14,21 @@ fn main() {
     let cards_n = 119315717514047usize;
     let target_ind = 2020usize;
     let shuffle_count = 101741582076661usize;
-    // let cards_n = 10007usize;
-    // let target_ind = 3293usize;
-    // let shuffle_count = 1usize;
-    let deck = ShuffleDeck::new(techs.iter(), cards_n);
-    let mut cur_ind = deck.map_from(target_ind);
-    let mut map_count = 1usize;
-    let cache_interval = 50000000usize;
-    while cur_ind != target_ind {
-        cur_ind = deck.map_from(cur_ind);
-        map_count += 1;
-        if map_count % cache_interval == 0 {
-            println!("Mapped {} time(s).", map_count);
+    let mut unit_shuffle = DeckShuffle::new(techs.iter(), cards_n);
+    let mut total_shuffle = DeckShuffle::ident(cards_n);
+    let mut cur_shuffle_count = shuffle_count;
+    while cur_shuffle_count > 0 {
+        if cur_shuffle_count & 1 != 0 {
+            total_shuffle.append(&unit_shuffle);
         }
-    }
-    println!("After {} time(s), the repeating shuffles form a cycle.", map_count);
 
-    let effective_map_to_count = shuffle_count % map_count;
-    for _ in 0..effective_map_to_count {
-        cur_ind = deck.map_to(cur_ind);
+        cur_shuffle_count >>= 1;
+        unit_shuffle.square();
     }
-    println!("After {} times shuffling, the card at [{}] in deck with {} cards is #{}.", shuffle_count, target_ind, cards_n, cur_ind);
+
+    let origin_ind = total_shuffle.rev_map(target_ind);
+    println!(
+        "After {} times shuffling, the card at [{}] in deck with {} cards is #{}.",
+        shuffle_count, target_ind, cards_n, origin_ind
+    );
 }
-

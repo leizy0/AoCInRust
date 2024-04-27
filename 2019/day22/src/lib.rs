@@ -1,5 +1,12 @@
 use std::{
-    cell::RefCell, env::args, error, fmt::Display, fs::File, io::{self, BufRead, BufReader}, iter, path::Path
+    cell::RefCell,
+    env::args,
+    error,
+    fmt::Display,
+    fs::File,
+    io::{self, BufRead, BufReader},
+    iter,
+    path::Path,
 };
 
 use once_cell::sync::Lazy;
@@ -60,25 +67,25 @@ impl TryFrom<&str> for ShuffleTech {
 }
 
 impl ShuffleTech {
-    pub fn map_from(&self, ind: usize, cards_n: usize) -> usize {
+    pub fn map(&self, ind: usize, cards_n: usize) -> usize {
         assert!(ind < cards_n);
         match self {
             ShuffleTech::NewStack => cards_n - 1 - ind,
-            ShuffleTech::Cut(i) => Self::cut_map_from(*i, ind, cards_n),
-            ShuffleTech::Increment(u) => Self::inc_map_from(*u, ind, cards_n),
+            ShuffleTech::Cut(i) => Self::cut_map(*i, ind, cards_n),
+            ShuffleTech::Increment(u) => Self::inc_map(*u, ind, cards_n),
         }
     }
 
-    pub fn map_to(&self, ind: usize, cards_n: usize) -> usize {
+    pub fn rev_map(&self, ind: usize, cards_n: usize) -> usize {
         assert!(ind < cards_n);
         match self {
             ShuffleTech::NewStack => cards_n - 1 - ind,
-            ShuffleTech::Cut(i) => Self::cut_map_from(-i, ind, cards_n),
-            ShuffleTech::Increment(u) => Self::inc_map_to(*u, ind, cards_n),
+            ShuffleTech::Cut(i) => Self::cut_map(-i, ind, cards_n),
+            ShuffleTech::Increment(u) => Self::inc_rev_map(*u, ind, cards_n),
         }
     }
 
-    fn cut_map_from(cut_i: i32, ind: usize, cards_n: usize) -> usize {
+    fn cut_map(cut_i: i32, ind: usize, cards_n: usize) -> usize {
         let i_abs = usize::try_from(cut_i.abs()).unwrap() % cards_n;
         if cut_i > 0 {
             if ind < i_abs {
@@ -101,11 +108,11 @@ impl ShuffleTech {
         }
     }
 
-    fn inc_map_from(inc_u: u32, ind: usize, cards_n: usize) -> usize {
+    fn inc_map(inc_u: u32, ind: usize, cards_n: usize) -> usize {
         ind * usize::try_from(inc_u).unwrap() % cards_n
     }
 
-    fn inc_map_to(inc_u: u32, ind: usize, cards_n: usize) -> usize {
+    fn inc_rev_map(inc_u: u32, ind: usize, cards_n: usize) -> usize {
         let inc_u = usize::try_from(inc_u).unwrap();
         let cards_quo = cards_n / inc_u;
         let cards_rem = cards_n % inc_u;
@@ -115,17 +122,21 @@ impl ShuffleTech {
             inc_u - ind % inc_u
         };
 
-        let (gcd, (_, mut c_factor)) = Self::pulverize(isize::try_from(inc_u).unwrap(), isize::try_from(cards_rem).unwrap());
+        let (gcd, (_, mut c_factor)) = Self::pulverize(
+            isize::try_from(inc_u).unwrap(),
+            isize::try_from(cards_rem).unwrap(),
+        );
         let lcm_c_factor = isize::try_from(inc_u / gcd).unwrap();
         c_factor *= isize::try_from(target_rem / gcd).unwrap();
         let wrap_count = if c_factor < 0 {
             usize::try_from(c_factor % lcm_c_factor + lcm_c_factor)
         } else {
             usize::try_from(c_factor % lcm_c_factor)
-        }.unwrap();
+        }
+        .unwrap();
 
         let origin_ind = (wrap_count * cards_rem + ind) / inc_u + wrap_count * cards_quo;
-        debug_assert!(Self::inc_map_from(inc_u as u32, origin_ind, cards_n) == ind);
+        debug_assert!(Self::inc_map(inc_u as u32, origin_ind, cards_n) == ind);
 
         origin_ind
     }
@@ -145,7 +156,7 @@ impl ShuffleTech {
             n = d;
             d = rem;
         }
-        
+
         (usize::try_from(n).unwrap(), n_factor)
     }
 
@@ -179,20 +190,28 @@ impl ShuffleTech {
     }
 }
 
-#[derive(Debug)]
-pub struct ShuffleDeck {
+#[derive(Debug, Clone)]
+pub struct DeckShuffle {
     cards_n: usize,
     ind_factor: isize,
     constant: isize,
 }
 
-impl ShuffleDeck {
+impl DeckShuffle {
     pub fn new<'a, I: IntoIterator<Item = &'a ShuffleTech>>(iter: I, cards_n: usize) -> Self {
-        let init = Self { cards_n, ind_factor: 1, constant: 0 };
+        let init = Self {
+            cards_n,
+            ind_factor: 1,
+            constant: 0,
+        };
         iter.into_iter().fold(init, |mut res, st| {
             res.combine(st);
             res
         })
+    }
+
+    pub fn ident(cards_n: usize) -> Self {
+        Self::new(iter::empty(), cards_n)
     }
 
     pub fn ind_factor(&self) -> isize {
@@ -208,7 +227,7 @@ impl ShuffleDeck {
             ShuffleTech::NewStack => {
                 self.ind_factor = -self.ind_factor;
                 self.constant = -self.constant - 1;
-            },
+            }
             ShuffleTech::Cut(c) => self.constant -= isize::try_from(*c).unwrap(),
             ShuffleTech::Increment(i) => {
                 let i = isize::try_from(*i).unwrap();
@@ -217,11 +236,27 @@ impl ShuffleDeck {
                 self.ind_factor %= cards_n;
                 self.constant *= i;
                 self.constant %= cards_n;
-            },
+            }
         }
     }
 
-    pub fn map_from(&self, ind: usize) -> usize {
+    pub fn append(&mut self, other: &Self) {
+        let ind_factor = i128::try_from(self.ind_factor).unwrap();
+        let constant = i128::try_from(self.constant).unwrap();
+        let other_ind_factor = i128::try_from(other.ind_factor).unwrap();
+        let other_constant = i128::try_from(other.constant).unwrap();
+        let cards_n = i128::try_from(self.cards_n).unwrap();
+
+        self.ind_factor = isize::try_from(ind_factor * other_ind_factor % cards_n).unwrap();
+        self.constant =
+            isize::try_from((ind_factor * other_constant + constant) % cards_n).unwrap();
+    }
+
+    pub fn square(&mut self) {
+        self.append(&self.clone())
+    }
+
+    pub fn map(&self, ind: usize) -> usize {
         assert!(ind < self.cards_n);
         let ind = i128::try_from(ind).unwrap();
         let cards_n = i128::try_from(self.cards_n).unwrap();
@@ -235,7 +270,7 @@ impl ShuffleDeck {
         usize::try_from(ind_rem).unwrap()
     }
 
-    pub fn map_to(&self, target_ind: usize) -> usize {
+    pub fn rev_map(&self, target_ind: usize) -> usize {
         assert!(target_ind < self.cards_n);
         let target_ind = isize::try_from(target_ind).unwrap();
         let cards_n = isize::try_from(self.cards_n).unwrap();
@@ -246,12 +281,16 @@ impl ShuffleDeck {
         i_factor *= i128::try_from(target_rem / gcd).unwrap();
         let lcm_i_factor = (cards_n / gcd).abs();
         let origin_ind = if i_factor < 0 {
-            usize::try_from(isize::try_from(i_factor % i128::try_from(lcm_i_factor).unwrap()).unwrap() + lcm_i_factor)
+            usize::try_from(
+                isize::try_from(i_factor % i128::try_from(lcm_i_factor).unwrap()).unwrap()
+                    + lcm_i_factor,
+            )
         } else {
             usize::try_from(i_factor % i128::try_from(lcm_i_factor).unwrap())
-        }.unwrap();
-        
-        debug_assert!(self.map_from(origin_ind) == usize::try_from(target_ind).unwrap());
+        }
+        .unwrap();
+
+        debug_assert!(self.map(origin_ind) == usize::try_from(target_ind).unwrap());
 
         origin_ind
     }
@@ -269,23 +308,23 @@ impl ShuffleDeck {
             n = d;
             d = rem;
         }
-        
+
         (n, n_factor)
     }
 }
 
-pub struct CachedShuffleDeck {
+pub struct CachedDeckShuffle {
     cards_n: usize,
-    decks: Vec<ShuffleDeck>,
-    total_deck: ShuffleDeck,
+    decks: Vec<DeckShuffle>,
+    total_deck: DeckShuffle,
     map_to_cache: RefCell<Vec<Vec<Option<usize>>>>,
 }
 
-impl CachedShuffleDeck {
+impl CachedDeckShuffle {
     pub fn new<'a, I: IntoIterator<Item = &'a ShuffleTech>>(iter: I, cards_n: usize) -> Self {
         const FACTOR_LIMIT: isize = 1000000;
-        let mut cur_deck = ShuffleDeck::new(iter::empty(), cards_n);
-        let mut total_deck = ShuffleDeck::new(iter::empty(), cards_n);
+        let mut cur_deck = DeckShuffle::ident(cards_n);
+        let mut total_deck = DeckShuffle::ident(cards_n);
         let mut decks = Vec::new();
         let mut map_to_cache = Vec::new();
         for tech in iter {
@@ -295,24 +334,35 @@ impl CachedShuffleDeck {
             if cur_factor_abs > FACTOR_LIMIT {
                 decks.push(cur_deck);
                 map_to_cache.push(vec![None; usize::try_from(cur_factor_abs).unwrap()]);
-                cur_deck = ShuffleDeck::new(iter::empty(), cards_n);
+                cur_deck = DeckShuffle::new(iter::empty(), cards_n);
             }
         }
-        map_to_cache.push(vec![None; usize::try_from(cur_deck.ind_factor().abs()).unwrap()]);
+        map_to_cache.push(vec![
+            None;
+            usize::try_from(cur_deck.ind_factor().abs()).unwrap()
+        ]);
         decks.push(cur_deck);
 
-        Self { cards_n, decks, total_deck, map_to_cache: RefCell::new(map_to_cache) }
+        Self {
+            cards_n,
+            decks,
+            total_deck,
+            map_to_cache: RefCell::new(map_to_cache),
+        }
     }
 
-    pub fn map_from(&self, ind: usize) -> usize {
-        self.total_deck.map_from(ind)
+    pub fn map(&self, ind: usize) -> usize {
+        self.total_deck.map(ind)
     }
 
-    pub fn map_to(&self, target_ind: usize) -> usize {
+    pub fn rev_map(&self, target_ind: usize) -> usize {
         let mut cur_ind = target_ind;
         for (d_ind, deck) in self.decks.iter().enumerate().rev() {
-            let cache_ind = usize::try_from(isize::try_from(cur_ind).unwrap() % deck.ind_factor()).unwrap();
-            let mapped_start_ind = *self.map_to_cache.borrow_mut()[d_ind][usize::try_from(cache_ind).unwrap()].get_or_insert_with(|| deck.map_to(cache_ind));
+            let cache_ind =
+                usize::try_from(isize::try_from(cur_ind).unwrap() % deck.ind_factor()).unwrap();
+            let mapped_start_ind = *self.map_to_cache.borrow_mut()[d_ind]
+                [usize::try_from(cache_ind).unwrap()]
+            .get_or_insert_with(|| deck.rev_map(cache_ind));
             let ind_offset = cur_ind / usize::try_from(deck.ind_factor().abs()).unwrap();
             let prev_ind = if deck.ind_factor() > 0 {
                 if ind_offset + mapped_start_ind > self.cards_n {
@@ -327,10 +377,10 @@ impl CachedShuffleDeck {
                     mapped_start_ind - ind_offset
                 }
             };
-            debug_assert!(deck.map_from(prev_ind) == cur_ind);
+            debug_assert!(deck.map(prev_ind) == cur_ind);
             cur_ind = prev_ind;
         }
-        debug_assert!(self.map_from(cur_ind) == target_ind);
+        debug_assert!(self.map(cur_ind) == target_ind);
 
         cur_ind
     }
