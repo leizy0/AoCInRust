@@ -5,6 +5,7 @@ pub mod arcade;
 pub mod ascii;
 pub mod beam;
 pub mod int_code;
+pub mod nic;
 pub mod paint;
 pub mod pilot;
 pub mod spring;

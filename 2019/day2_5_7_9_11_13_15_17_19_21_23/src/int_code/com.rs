@@ -82,7 +82,7 @@ macro_rules! def_computer {
             {
                 let proc_id = self.new_proc(&image, input_dev, output_dev);
                 loop {
-                    self.exe_proc(proc_id)?;
+                    self.exe_proc(proc_id, None)?;
                     let state = self.proc(proc_id).unwrap().state;
                     if state == ProcessState::Halt || state == ProcessState::Block {
                         break;
@@ -101,10 +101,10 @@ macro_rules! def_computer {
                 loop {
                     match cur_proc_id_ind {
                         Some(ind) => {
-                            self.exe_proc(proc_ids[ind])?;
+                            self.exe_proc(proc_ids[ind], None)?;
 
                             cur_proc_id_ind = None;
-                            for i in 0..proc_ids.len() {
+                            for i in 1..=proc_ids.len() {
                                 let next_proc_id_ind = (i + ind) % proc_ids.len();
                                 let next_proc_id = proc_ids[next_proc_id_ind];
                                 if self
@@ -127,7 +127,52 @@ macro_rules! def_computer {
                 }
             }
 
-            fn exe_proc(&mut self, cur_proc_id: usize) -> Result<(), Error> {
+            // Execute processes in a preemptive way.
+            pub fn exe_procs_pmp_cond<F: Fn() -> bool>(
+                &mut self,
+                proc_ids: &[usize],
+                start_proc_ind: usize,
+                reserved_step_count: usize,
+                interrupt_cond: F,
+            ) -> Result<ProcsExecutionResult, Error> {
+                let mut cur_proc_id_ind = Some(start_proc_ind);
+                loop {
+                    if interrupt_cond() {
+                        // Interrupt execution when satisfy given condition
+                        break;
+                    }
+
+                    match cur_proc_id_ind {
+                        Some(ind) => {
+                            self.exe_proc(proc_ids[ind], Some(reserved_step_count))?;
+
+                            cur_proc_id_ind = None;
+                            for i in 1..=proc_ids.len() {
+                                let next_proc_id_ind = (i + ind) % proc_ids.len();
+                                let next_proc_id = proc_ids[next_proc_id_ind];
+                                if self
+                                    .proc(next_proc_id)
+                                    .is_some_and(|p| p.state == ProcessState::Ready)
+                                {
+                                    cur_proc_id_ind = Some(next_proc_id_ind);
+                                    break;
+                                }
+                            }
+                        }
+                        None => {
+                            break;
+                        }
+                    };
+                }
+
+                let images = proc_ids
+                    .iter()
+                    .flat_map(|&id| self.take_proc(id).map(|p| (id, p.into_snap())))
+                    .collect::<HashMap<_, _>>();
+                Ok(ProcsExecutionResult::new(images))
+            }
+
+            fn exe_proc(&mut self, cur_proc_id: usize, reserved_step_count: Option<usize>) -> Result<(), Error> {
                 self.proc_mut(cur_proc_id)
                     .ok_or(Error::RunningUnknownProcess(cur_proc_id))?;
 
@@ -141,11 +186,12 @@ macro_rules! def_computer {
                 }
 
                 run_proc.run_proc_mut().state = ProcessState::Running;
+                let start_step_count = run_proc.run_proc().step_count;
                 loop {
                     let inst = run_proc.run_proc_mut().cur_inst()?;
                     if debug_enabled {
-                        let step_count = run_proc.run_proc_mut().step_count;
-                        let inst_p = run_proc.run_proc_mut().inst_p();
+                        let step_count = run_proc.run_proc().step_count;
+                        let inst_p = run_proc.run_proc().inst_p();
                         println!(
                             "Process({}) step # {}: {:?} @ {}.",
                             cur_proc_id, step_count, inst, inst_p
@@ -167,13 +213,19 @@ macro_rules! def_computer {
                                 // Process is blocked by input instruction when input of this process has no data
                                 run_proc.run_proc_mut().state = ProcessState::Block;
                                 if debug_enabled {
-                                    println!("Process({}) blocked by requiring input.", cur_proc_id);
+                                    println!("Process({}) blocked for requiring input.", cur_proc_id);
                                 }
                                 break;
                             }
                             _ => return Err(e),
                         },
                     };
+
+                    if reserved_step_count.as_ref().is_some_and(|rsc| *rsc <= run_proc.run_proc().step_count - start_step_count) {
+                        // Run over allowed steps, yield processor
+                        run_proc.run_proc_mut().state = ProcessState::Ready;
+                        break;
+                    }
                 }
 
                 Ok(())
