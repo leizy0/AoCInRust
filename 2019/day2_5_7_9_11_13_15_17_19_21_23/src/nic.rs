@@ -85,9 +85,54 @@ impl Packet {
 }
 
 #[derive(Debug)]
+pub struct NetworkNAT {
+    addr: usize,
+    send_addr: usize,
+    recv_pac: Option<Packet>,
+    sent_pacs: Vec<Packet>,
+}
+
+impl NetworkNAT {
+    pub fn new(addr: usize, send_addr: usize) -> Self {
+        Self {
+            addr,
+            send_addr,
+            recv_pac: None,
+            sent_pacs: Vec::new(),
+        }
+    }
+
+    pub fn sent_pacs(&self) -> &[Packet] {
+        &self.sent_pacs
+    }
+
+    pub fn addr(&self) -> usize {
+        self.addr
+    }
+
+    pub fn recv(&mut self, mut pac: Packet) {
+        println!("NAT receive {}", pac);
+        pac.from_addr = self.addr;
+        pac.to_addr = self.send_addr;
+        self.recv_pac = Some(pac);
+    }
+
+    pub fn send(&mut self) -> Option<Packet> {
+        if let Some(pac) = self.recv_pac.take() {
+            println!("NAT send {}.", pac);
+            self.sent_pacs.push(pac.clone());
+            Some(pac)
+        } else {
+            None
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct NetworkHub {
     ports: HashMap<usize, Port>,
     card_addrs: HashSet<usize>,
+    nat_op: Option<NetworkNAT>,
 }
 
 impl NetworkHub {
@@ -95,10 +140,22 @@ impl NetworkHub {
         Self {
             ports: HashMap::new(),
             card_addrs: HashSet::new(),
+            nat_op: None,
         }
     }
 
-    pub fn log(&self, to_addr: usize, ind: usize) -> Option<Packet> {
+    pub fn with_nat(nat_addr: usize, nat_send_addr: usize) -> Self {
+        let mut hub = Self::new();
+        hub.nat_op = Some(NetworkNAT::new(nat_addr, nat_send_addr));
+
+        hub
+    }
+
+    pub fn nat(&self) -> Option<&NetworkNAT> {
+        self.nat_op.as_ref()
+    }
+
+    pub fn recv_pac_log(&self, to_addr: usize, ind: usize) -> Option<Packet> {
         self.ports
             .get(&to_addr)
             .and_then(|pb| pb.packets.get(ind).cloned())
@@ -116,12 +173,25 @@ impl NetworkHub {
 
     pub fn connect(&mut self, card: &NICard) {
         let addr = card.addr();
-        self.card_addrs.insert(addr);
+        if !self.card_addrs.insert(addr) {
+            // Connect to a card twice.
+            panic!("Connect to card with address {} again.", addr);
+        } else if self.nat_op.as_ref().is_some_and(|nat| nat.addr() == addr) {
+            panic!("Connect a card to a port(with address {}) for NAT.", addr);
+        }
+
         self.ports.entry(addr).or_insert_with(|| Port::new());
     }
 
-    pub fn send(&mut self, packet: &Packet) {
+    pub fn send(&mut self, packet: Packet) {
         println!("Send: {}", packet);
+        if let Some(nat) = self.nat_op.as_mut() {
+            if packet.to() == nat.addr() {
+                nat.recv(packet);
+                return;
+            }
+        }
+
         self.ports
             .entry(packet.to())
             .or_insert_with(|| Port::new())
@@ -129,6 +199,12 @@ impl NetworkHub {
     }
 
     pub fn recv(&mut self, addr: usize) -> Option<Packet> {
+        if !self.is_empty() && self.is_idle() {
+            if let Some(pac) = self.nat_op.as_mut().and_then(|nat| nat.send()) {
+                self.send(pac);
+            }
+        }
+
         self.ports
             .get_mut(&addr)
             .and_then(|pb| pb.recv())
@@ -152,8 +228,8 @@ impl Port {
         }
     }
 
-    pub fn send(&mut self, packet: &Packet) {
-        self.packets.push(packet.clone())
+    pub fn send(&mut self, packet: Packet) {
+        self.packets.push(packet)
     }
 
     pub fn recv(&mut self) -> Option<Packet> {
@@ -294,7 +370,7 @@ impl OutputPort for NICard {
                     .assemble(value)
                     .map_err(|e| crate::Error::IOProcessError(e.to_string()))?
                 {
-                    self.hub.borrow_mut().send(&packet)
+                    self.hub.borrow_mut().send(packet)
                 }
 
                 Ok(())
@@ -304,6 +380,16 @@ impl OutputPort for NICard {
 
     fn wait_proc_id(&self) -> Option<usize> {
         None
+    }
+}
+
+pub fn check_args() -> Result<String, Error> {
+    let args = env::args();
+    let args_n = args.len();
+    if args_n != 2 {
+        Err(Error::WrongNumberOfArgs(args_n, 2))
+    } else {
+        Ok(args.skip(1).next().unwrap().to_string())
     }
 }
 
@@ -328,12 +414,33 @@ pub fn run_network(host_n: usize, intcode: &Vec<i64>) -> Result<NetworkHub, Erro
         .map_err(Error::ExecutionError)
 }
 
-pub fn check_args() -> Result<String, Error> {
-    let args = env::args();
-    let args_n = args.len();
-    if args_n != 2 {
-        Err(Error::WrongNumberOfArgs(args_n, 2))
-    } else {
-        Ok(args.skip(1).next().unwrap().to_string())
+pub fn run_network_nat(
+    host_n: usize,
+    intcode: &Vec<i64>,
+    nat_addr: usize,
+    nat_send_addr: usize,
+) -> Result<NetworkHub, Error> {
+    let mut computer = SeqIntCodeComputer::new(false);
+    let mut proc_ids = Vec::new();
+    let hub = Rc::new(RefCell::new(NetworkHub::with_nat(nat_addr, nat_send_addr)));
+    for i in 0..host_n {
+        let card = NICard::new(i, hub.clone());
+        hub.borrow_mut().connect(&card);
+        let io_dev = SeqIODevice::new(card);
+        let cur_proc_id =
+            computer.new_proc(&intcode, io_dev.input_device(), io_dev.output_device());
+        proc_ids.push(cur_proc_id);
     }
+
+    computer
+        .exe_procs_pmp_cond(&proc_ids, proc_ids[0], 100, || {
+            let hub = hub.borrow();
+            let sent_pacs = hub.nat().unwrap().sent_pacs();
+            let mut rev_pac_iter = sent_pacs.iter().rev();
+            rev_pac_iter
+                .next()
+                .is_some_and(|p0| rev_pac_iter.next().is_some_and(|p1| p0.y() == p1.y()))
+        })
+        .map(|_| Rc::try_unwrap(hub).unwrap().into_inner())
+        .map_err(Error::ExecutionError)
 }

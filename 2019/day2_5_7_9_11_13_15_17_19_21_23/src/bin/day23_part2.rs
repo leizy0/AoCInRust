@@ -13,17 +13,19 @@ fn main() {
         })
         .unwrap();
     let host_n = 50;
-    match nic::run_network(host_n, &intcode) {
+    let nat_addr = 255;
+    let nat_send_addr = 0;
+    match nic::run_network_nat(host_n, &intcode, nat_addr, nat_send_addr) {
         Ok(hub) => {
-            let check_addr = 255;
-            if let Some(packet) = hub.recv_pac_log(check_addr, 0) {
-                println!(
-                    "The first packet sent to address({}) is {}",
-                    check_addr, packet
-                );
-            } else {
-                eprintln!("There isn't any packet sent to address({}).", check_addr);
-            }
+            let nat_sent_pacs = hub.nat().unwrap().sent_pacs();
+            let nat_sent_pacs_n = nat_sent_pacs.len();
+            assert!(nat_sent_pacs_n > 2);
+            let nat_last_sent_y = nat_sent_pacs[nat_sent_pacs_n - 1].y();
+            assert!(nat_last_sent_y == nat_sent_pacs[nat_sent_pacs_n - 2].y());
+            println!(
+                "NAT has sent two packets with this same y({}) to address {} in a row.",
+                nat_last_sent_y, nat_send_addr
+            );
         }
         Err(e) => {
             eprintln!("Failed to run the whole network to end, get error({}).", e);
