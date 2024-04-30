@@ -1,6 +1,6 @@
-use day2_5_7_9_11_13_15_17_19_21::{
+use day2_5_7_9_11_13_15_17_19_21_23::{
     int_code::{com::SeqIntCodeComputer, io::SeqIODevice, read_int_code},
-    paint::{PaintRobot, PaintSimulator},
+    paint::{Color, PaintRobot, PaintSimulator},
 };
 
 fn main() {
@@ -16,7 +16,9 @@ fn main() {
         }
     };
 
-    let io_dev = SeqIODevice::new(PaintSimulator::new(PaintRobot::new()));
+    let mut robot = PaintRobot::new();
+    robot.paint(Color::White);
+    let io_dev = SeqIODevice::new(PaintSimulator::new(robot));
     let mut computer = SeqIntCodeComputer::new(true);
     match computer.execute_with_io(&int_code, io_dev.input_device(), io_dev.output_device()) {
         Ok(res) => io_dev.check(|ps| {
@@ -29,11 +31,6 @@ fn main() {
         Err(e) => eprintln!("Failed to run painting program, get error({})", e),
     };
 
-    io_dev.check(|ps| {
-        println!(
-            "In whole painting process, robot has painted {} times and {} blocks",
-            ps.robot().paint_count(),
-            ps.robot().block_count()
-        );
-    });
+    println!("After painting, robot get image:");
+    io_dev.check(|ps| println!("{}", ps.robot().image()));
 }

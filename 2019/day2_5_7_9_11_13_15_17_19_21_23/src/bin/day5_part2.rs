@@ -1,4 +1,4 @@
-use day2_5_7_9_11_13_15_17_19_21::int_code::{
+use day2_5_7_9_11_13_15_17_19_21_23::int_code::{
     com::SeqIntCodeComputer,
     io::{Channel, SeqInputDevice, SeqOutputDevice},
     read_int_code,
@@ -11,7 +11,7 @@ fn main() {
         int_code_file
     ));
     let mut computer = SeqIntCodeComputer::new(false);
-    let input_dev = SeqInputDevice::new(Channel::new(&[1]));
+    let input_dev = SeqInputDevice::new(Channel::new(&[5]));
     let output_dev = SeqOutputDevice::new(Channel::new(&[]));
     match computer.execute_with_io(&int_code, input_dev, output_dev.clone()) {
         Ok(res) => output_dev.check(|c| {
@@ -19,7 +19,7 @@ fn main() {
                 "After {} steps, execution finished, Outputs: {:?}",
                 res.step_count(),
                 c.data()
-            );
+            )
         }),
         Err(e) => eprintln!("Failed to execute int code, get error({})", e),
     }

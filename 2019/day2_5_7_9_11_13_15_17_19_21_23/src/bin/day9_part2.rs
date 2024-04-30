@@ -1,4 +1,4 @@
-use day2_5_7_9_11_13_15_17_19_21::int_code::{
+use day2_5_7_9_11_13_15_17_19_21_23::int_code::{
     com::SeqIntCodeComputer,
     io::{Channel, SeqInputDevice, SeqOutputDevice},
     read_int_code,
@@ -18,18 +18,18 @@ fn main() {
     };
 
     let mut computer = SeqIntCodeComputer::new(true);
-    let input_dev = SeqInputDevice::new(Channel::new(&[1]));
+    let input_dev = SeqInputDevice::new(Channel::new(&[2]));
     let output_dev = SeqOutputDevice::new(Channel::new(&[]));
     match computer.execute_with_io(&int_code, input_dev, output_dev.clone()) {
         Ok(res) => output_dev.check(|c| {
             println!(
-                "Boost program in test mode takes {} steps to finish, get outputs({:?})",
+                "Boost program in sensor boost mode takes {} steps to finish, get outputs({:?})",
                 res.step_count(),
                 c.data()
             )
         }),
         Err(e) => eprintln!(
-            "Failed to execute Boost program in test mode, get error({})",
+            "Failed to execute Boost program in sensor boost, get error({})",
             e
         ),
     }
