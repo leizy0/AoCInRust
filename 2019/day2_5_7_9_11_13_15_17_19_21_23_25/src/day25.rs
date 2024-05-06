@@ -1,8 +1,7 @@
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::VecDeque,
     env, error,
     fmt::Display,
-    hash::Hash,
     io::{self, stdin, stdout, Write},
     iter,
 };
@@ -31,45 +30,11 @@ impl Display for Error {
 }
 
 impl error::Error for Error {}
-
-#[derive(Debug)]
-struct RegexWrapper {
-    regex_str: String,
-    regex: Regex,
-}
-
-impl RegexWrapper {
-    pub fn new(regex_str: &str) -> Self {
-        Self {
-            regex_str: regex_str.to_string(),
-            regex: Regex::new(regex_str).unwrap(),
-        }
-    }
-
-    pub fn is_match(&self, target_str: &str) -> bool {
-        self.regex.is_match(target_str)
-    }
-}
-
-impl PartialEq for RegexWrapper {
-    fn eq(&self, other: &Self) -> bool {
-        self.regex_str == other.regex_str
-    }
-}
-
-impl Eq for RegexWrapper {}
-
-impl Hash for RegexWrapper {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.regex_str.hash(state);
-    }
-}
-
 pub struct DroidConsole {
     input_buf: VecDeque<char>,
     output_buf: String,
     log: String,
-    com_patterns: HashMap<RegexWrapper, Option<String>>, // <command pattern in regular expression, candidate complete command string>
+    com_patterns: Vec<(Regex, Option<String>)>, // <command pattern in regular expression, candidate complete command string>
     is_end: bool,
 }
 
@@ -123,16 +88,22 @@ impl DroidConsole {
         }
     }
 
-    fn init_coms() -> HashMap<RegexWrapper, Option<String>> {
-        HashMap::from([
-            (RegexWrapper::new(r"^n|(north)$"), Some("north".to_string())),
-            (RegexWrapper::new(r"^s|(south)$"), Some("south".to_string())),
-            (RegexWrapper::new(r"^w|(west)$"), Some("west".to_string())),
-            (RegexWrapper::new(r"^e|(east)$"), Some("east".to_string())),
-            (RegexWrapper::new(r"^take .+$"), None),
-            (RegexWrapper::new(r"^drop .+$"), None),
-            (RegexWrapper::new(r"^i|(inv)$"), Some("inv".to_string())),
-            (RegexWrapper::new(r"^x|(exit)$"), Some("exit".to_string())),
+    fn init_coms() -> Vec<(Regex, Option<String>)> {
+        Vec::from([
+            (
+                Regex::new(r"^n|(north)$").unwrap(),
+                Some("north".to_string()),
+            ),
+            (
+                Regex::new(r"^s|(south)$").unwrap(),
+                Some("south".to_string()),
+            ),
+            (Regex::new(r"^w|(west)$").unwrap(), Some("west".to_string())),
+            (Regex::new(r"^e|(east)$").unwrap(), Some("east".to_string())),
+            (Regex::new(r"^take .+$").unwrap(), None),
+            (Regex::new(r"^drop .+$").unwrap(), None),
+            (Regex::new(r"^i|(inv)$").unwrap(), Some("inv".to_string())),
+            (Regex::new(r"^x|(exit)$").unwrap(), Some("exit".to_string())),
         ])
     }
 
