@@ -1,5 +1,5 @@
 [package]
-name = "day2_5_7_9_11_13_15_17_19_21_23"
+name = "day2_5_7_9_11_13_15_17_19_21_23_25"
 version = "0.1.0"
 edition = "2021"
 
@@ -10,3 +10,4 @@ once_cell = "1.18.0"
 int-enum = "0.5.0"
 rayon = "1.9.0"
 crossterm = "0.27.0"
+regex = "1.10.4"
