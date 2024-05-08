@@ -496,6 +496,10 @@ mod avx2 {
             #[cfg(target_arch = "x86_64")]
             use std::arch::x86_64::*;
 
+            if self.body_count() == 4 {
+                return self.step_4_bodies();
+            }
+
             let lane_count = 8;
             let block_count = self.pos_x.len() / lane_count;
             let pos_pointers = [
@@ -608,6 +612,36 @@ mod avx2 {
                 self.vel_y[0..self.count].iter().sum(),
                 self.vel_z[0..self.count].iter().sum(),
             )
+        }
+
+        fn step_4_bodies(&mut self) {
+            Self::step_4_bodies_1_d(&mut self.pos_x[0..4], &mut self.vel_x[0..4]);
+            Self::step_4_bodies_1_d(&mut self.pos_y[0..4], &mut self.vel_y[0..4]);
+            Self::step_4_bodies_1_d(&mut self.pos_z[0..4], &mut self.vel_z[0..4]);
+        }
+
+        fn step_4_bodies_1_d(pos: &mut [i32], vel: &mut [i32]) {
+            #[cfg(target_arch = "x86")]
+            use std::arch::x86::*;
+            #[cfg(target_arch = "x86_64")]
+            use std::arch::x86_64::*;
+
+            debug_assert!(pos.len() == 4 && vel.len() == 4);
+            unsafe {
+                let ones = _mm_set1_epi32(1);
+                let mut pos0 = _mm_load_si128(pos.as_ptr() as *const _);// DCBA
+                let pos1 = _mm_shuffle_epi32::<0x39>(pos0); // ADCB
+                let pos2 = _mm_shuffle_epi32::<0x4E>(pos0); // BADC
+                let pos3 = _mm_shuffle_epi32::<0x93>(pos0); // CBAD
+                let mut del_v = _mm_sign_epi32(ones, _mm_sub_epi32(pos1, pos0));
+                del_v = _mm_add_epi32(del_v, _mm_sign_epi32(ones, _mm_sub_epi32(pos2, pos0)));
+                del_v = _mm_add_epi32(del_v, _mm_sign_epi32(ones, _mm_sub_epi32(pos3, pos0)));
+                let mut next_vel = _mm_load_si128(vel.as_ptr() as *const _);
+                next_vel = _mm_add_epi32(next_vel, del_v);
+                _mm_store_si128(vel.as_mut_ptr() as *mut _, next_vel);
+                pos0 = _mm_add_epi32(pos0, next_vel);
+                _mm_store_si128(pos.as_mut_ptr() as *mut _, pos0);
+            }
         }
     }
 
