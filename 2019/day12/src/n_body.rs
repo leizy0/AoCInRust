@@ -171,6 +171,7 @@ impl Body {
 
 #[cfg(not(any(feature = "use_avx2", feature = "multithread")))]
 // General implementation
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NBodySimulator {
     bodies: Vec<Body>,
 }
@@ -204,6 +205,21 @@ impl NBodySimulator {
 
             self.bodies[i].apply_vel();
         }
+    }
+
+    pub fn cycle_len(&self) -> usize {
+        let mut cycle_len = 0;
+        let mut simulator = self.clone();
+        loop {
+            simulator.step();
+            cycle_len += 1;
+
+            if simulator == *self {
+                break;
+            }
+        }
+
+        cycle_len
     }
 
     fn step_4_bodies(&mut self) {
@@ -275,11 +291,13 @@ mod multithread {
 
     use super::{Body, Vec3};
 
+    #[derive(Debug, Clone, PartialEq, Eq)]
     struct Bodies1D {
         pos_v: Vec<i32>,
         vel_v: Vec<i32>,
     }
     // Implementation using multiple threads to update each dimension.
+    #[derive(Debug, Clone, PartialEq, Eq)]
     pub struct NBodySimulator {
         dimensions: [Bodies1D; 3],
     }
@@ -344,6 +362,21 @@ mod multithread {
             });
         }
 
+        pub fn cycle_len(&self) -> usize {
+            let mut cycle_len = 0;
+            let mut simulator = self.clone();
+            loop {
+                simulator.step();
+                cycle_len += 1;
+
+                if simulator == *self {
+                    break;
+                }
+            }
+    
+            cycle_len
+        }
+
         pub fn potential_energy(&self) -> u32 {
             (0..self.body_count())
                 .into_iter()
@@ -398,7 +431,7 @@ pub use avx2::NBodySimulator;
 ))]
 mod avx2 {
     use super::{Body, Vec3};
-    use aligned_vec::AVec;
+    use aligned_vec::{AVec, ConstAlign, CACHELINE_ALIGN};
     use std::iter;
 
     pub struct NBodySimulator {
@@ -500,81 +533,20 @@ mod avx2 {
                 return self.step_4_bodies();
             }
 
-            let lane_count = 8;
-            let block_count = self.pos_x.len() / lane_count;
-            let pos_pointers = [
-                self.pos_x.as_mut_ptr(),
-                self.pos_y.as_mut_ptr(),
-                self.pos_z.as_mut_ptr(),
-            ];
-            let vel_pointers = [
-                self.vel_x.as_mut_ptr(),
-                self.vel_y.as_mut_ptr(),
-                self.vel_z.as_mut_ptr(),
-            ];
-            let acc_pointers = [
-                self.acc_x.as_mut_ptr(),
-                self.acc_y.as_mut_ptr(),
-                self.acc_z.as_mut_ptr(),
-            ];
+            Self::step_1d(&mut self.pos_x, &mut self.vel_x, &mut self.acc_x, &self.pad_mask, self.count);
+            Self::step_1d(&mut self.pos_y, &mut self.vel_y, &mut self.acc_y, &self.pad_mask, self.count);
+            Self::step_1d(&mut self.pos_z, &mut self.vel_z, &mut self.acc_z, &self.pad_mask, self.count);
+        }
 
-            unsafe {
-                let ones = _mm256_set1_epi32(1);
-                for d in 0..3 {
-                    // Iterate on dimension x, y, z
-                    // Calculate acceleration of every body in system.
-                    for i in 0..self.count {
-                        // Iterate on i_th body
-                        let body_pos_lanes = _mm256_set1_epi32(*pos_pointers[d].add(i));
-                        let mut this_body_acc = _mm256_set1_epi32(0);
-                        for b in 0..block_count {
-                            // Iterate on b_th block of body data
-                            let block_mask = _mm256_load_si256(
-                                self.pad_mask.as_ptr().add(b * lane_count) as *const _,
-                            );
-                            let this_body_pos = _mm256_and_si256(body_pos_lanes, block_mask);
-                            let other_bodies_pos =
-                                _mm256_load_si256(pos_pointers[d].add(b * lane_count) as *const _);
-                            let body_pos_diff = _mm256_sub_epi32(other_bodies_pos, this_body_pos);
-                            let this_block_acc = _mm256_sign_epi32(ones, body_pos_diff);
-                            this_body_acc = _mm256_add_epi32(this_body_acc, this_block_acc);
-                        }
-                        *acc_pointers[d].add(i) = hsum_8x32(this_body_acc);
-                    }
+        pub fn cycle_len(&self) -> usize {
+            let cycle_len_x = Self::cycle_len_1_d(&self.pos_x, &self.vel_x, &self.pad_mask, self.count);
+            println!("After {} step(s), initial state of bodies in X dimension repeats.", cycle_len_x);
+            let cycle_len_y = Self::cycle_len_1_d(&self.pos_y, &self.vel_y, &self.pad_mask, self.count);
+            println!("After {} step(s), initial state of bodies in Y dimension repeats.", cycle_len_y);
+            let cycle_len_z = Self::cycle_len_1_d(&self.pos_z, &self.vel_z, &self.pad_mask, self.count);
+            println!("After {} step(s), initial state of bodies in Z dimension repeats.", cycle_len_z);
 
-                    // Update velocity and position in this dimension.
-                    for b2 in 0..block_count {
-                        let block_mask = _mm256_load_si256(
-                            self.pad_mask.as_ptr().add(b2 * lane_count) as *const _,
-                        );
-                        let this_block_acc = _mm256_maskload_epi32(
-                            acc_pointers[d].add(b2 * lane_count) as *const _,
-                            block_mask,
-                        );
-                        let mut this_block_vel = _mm256_maskload_epi32(
-                            vel_pointers[d].add(b2 * lane_count) as *const _,
-                            block_mask,
-                        );
-                        this_block_vel = _mm256_add_epi32(this_block_vel, this_block_acc);
-                        let mut this_block_pos = _mm256_maskload_epi32(
-                            pos_pointers[d].add(b2 * lane_count) as *const _,
-                            block_mask,
-                        );
-                        this_block_pos = _mm256_add_epi32(this_block_pos, this_block_vel);
-
-                        _mm256_maskstore_epi32(
-                            vel_pointers[d].add(b2 * lane_count),
-                            block_mask,
-                            this_block_vel,
-                        );
-                        _mm256_maskstore_epi32(
-                            pos_pointers[d].add(b2 * lane_count),
-                            block_mask,
-                            this_block_pos,
-                        );
-                    }
-                }
-            }
+            super::lcm(cycle_len_x, super::lcm(cycle_len_y, cycle_len_z))
         }
 
         pub fn potential_energy(&self) -> u32 {
@@ -643,6 +615,135 @@ mod avx2 {
                 _mm_store_si128(pos.as_mut_ptr() as *mut _, pos0);
             }
         }
+
+        fn step_1d(pos_v: &mut AVec<i32>, vel_v: &mut AVec<i32>, acc_v: &mut AVec<i32>, pad_mask: &AVec<i32>, body_count: usize) {
+            #[cfg(target_arch = "x86")]
+            use std::arch::x86::*;
+            #[cfg(target_arch = "x86_64")]
+            use std::arch::x86_64::*;
+
+            let lane_count = 8;
+            let block_count = pos_v.len() / lane_count;
+            let pos_pointer = pos_v.as_mut_ptr();
+            let vel_pointer = vel_v.as_mut_ptr();
+            let acc_pointer = acc_v.as_mut_ptr();
+
+            unsafe {
+                let ones = _mm256_set1_epi32(1);
+                for i in 0..body_count {
+                    // Iterate on i_th body
+                    let body_pos_lanes = _mm256_set1_epi32(*pos_pointer.add(i));
+                    let mut this_body_acc = _mm256_set1_epi32(0);
+                    for b in 0..block_count {
+                        // Iterate on b_th block of body data
+                        let block_mask = _mm256_load_si256(
+                            pad_mask.as_ptr().add(b * lane_count) as *const _,
+                        );
+                        let this_body_pos = _mm256_and_si256(body_pos_lanes, block_mask);
+                        let other_bodies_pos =
+                            _mm256_load_si256(pos_pointer.add(b * lane_count) as *const _);
+                        let body_pos_diff = _mm256_sub_epi32(other_bodies_pos, this_body_pos);
+                        let this_block_acc = _mm256_sign_epi32(ones, body_pos_diff);
+                        this_body_acc = _mm256_add_epi32(this_body_acc, this_block_acc);
+                    }
+                    *acc_pointer.add(i) = hsum_8x32(this_body_acc);
+                }
+    
+                // Update velocity and position in this dimension.
+                for b2 in 0..block_count {
+                    let block_mask = _mm256_load_si256(
+                        pad_mask.as_ptr().add(b2 * lane_count) as *const _,
+                    );
+                    let this_block_acc = _mm256_maskload_epi32(
+                        acc_pointer.add(b2 * lane_count) as *const _,
+                        block_mask,
+                    );
+                    let mut this_block_vel = _mm256_maskload_epi32(
+                        vel_pointer.add(b2 * lane_count) as *const _,
+                        block_mask,
+                    );
+                    this_block_vel = _mm256_add_epi32(this_block_vel, this_block_acc);
+                    let mut this_block_pos = _mm256_maskload_epi32(
+                        pos_pointer.add(b2 * lane_count) as *const _,
+                        block_mask,
+                    );
+                    this_block_pos = _mm256_add_epi32(this_block_pos, this_block_vel);
+    
+                    _mm256_maskstore_epi32(
+                        vel_pointer.add(b2 * lane_count),
+                        block_mask,
+                        this_block_vel,
+                    );
+                    _mm256_maskstore_epi32(
+                        pos_pointer.add(b2 * lane_count),
+                        block_mask,
+                        this_block_pos,
+                    );
+                }
+            }
+            
+        }
+
+        fn cycle_len_1_d(pos_v: &AVec<i32>, vel_v: &AVec<i32>, pad_mask: &AVec<i32>, body_count: usize) -> usize {
+            if body_count == 4 {
+                return Self::cycle_len_4_bodies_1_d(&pos_v[0..4], &vel_v[0..4])
+            }
+
+            // General solution.
+            let mut imm_pos_v = pos_v.clone();
+            let mut imm_vel_v = vel_v.clone();
+            let mut imm_acc_v = pos_v.clone(); // Temp vector, the initial values aren't used.
+            let mut cycle_len = 0;
+            loop {
+                Self::step_1d(&mut imm_pos_v, &mut imm_vel_v, &mut imm_acc_v, pad_mask, body_count);
+                cycle_len += 1;
+
+                if *pos_v == imm_pos_v && *vel_v == imm_vel_v {
+                    break;
+                }
+            }
+
+            cycle_len
+        }
+
+        fn cycle_len_4_bodies_1_d(pos: &[i32], vel: &[i32]) -> usize {
+            #[cfg(target_arch = "x86")]
+            use std::arch::x86::*;
+            #[cfg(target_arch = "x86_64")]
+            use std::arch::x86_64::*;
+
+            unsafe fn is_mm_equal(m: __m128i, n: __m128i) -> bool {
+                let eq_res = _mm_xor_si128(m, n);
+                _mm_test_all_zeros(eq_res, eq_res) != 0
+            }
+
+            debug_assert!(pos.len() == 4 && vel.len() == 4);
+            let mut cycle_len = 0;
+            unsafe {
+                let ones = _mm_set1_epi32(1);
+                let target_pos = _mm_load_si128(pos.as_ptr() as *const _);
+                let target_vel = _mm_load_si128(vel.as_ptr() as *const _);
+                let mut pos0 = target_pos; // DCBA
+                let mut vel = target_vel;
+                loop {
+                    let pos1 = _mm_shuffle_epi32::<0x39>(pos0); // ADCB
+                    let pos2 = _mm_shuffle_epi32::<0x4E>(pos0); // BADC
+                    let pos3 = _mm_shuffle_epi32::<0x93>(pos0); // CBAD
+                    let mut del_v = _mm_sign_epi32(ones, _mm_sub_epi32(pos1, pos0));
+                    del_v = _mm_add_epi32(del_v, _mm_sign_epi32(ones, _mm_sub_epi32(pos2, pos0)));
+                    del_v = _mm_add_epi32(del_v, _mm_sign_epi32(ones, _mm_sub_epi32(pos3, pos0)));
+                    vel = _mm_add_epi32(vel, del_v);
+                    pos0 = _mm_add_epi32(pos0, vel);
+                    cycle_len += 1;
+
+                    if is_mm_equal(pos0, target_pos) && is_mm_equal(vel, target_vel) {
+                        break;
+                    }
+                }
+            }
+
+            cycle_len
+        }
     }
 
     // The following two function is for calculating 8 32-bit integers' sum, copied from Peter Cordes' answer at https://stackoverflow.com/questions/60108658/fastest-method-to-calculate-sum-of-all-packed-32-bit-integers-using-avx512-or-av
@@ -694,4 +795,37 @@ where
         .lines()
         .map(|r| r.map_err(Error::IOError).and_then(|s| Body::from_str(&s)))
         .collect::<Result<Vec<_>, Error>>()
+}
+
+fn lcm(m: usize, n: usize) -> usize {
+    let gcd = gcd(m, n);
+    m / gcd * n
+}
+
+fn gcd(mut m: usize, mut n: usize) -> usize {
+    assert!(m != 0 || n != 0);
+
+    while n != 0 {
+        let rem = m % n;
+        m = n;
+        n = rem;
+    }
+
+    m
+}
+
+#[test]
+fn test_gcd() {
+    assert_eq!(gcd(7, 0), 7);
+    assert_eq!(gcd(0, 7), 7);
+    assert_eq!(gcd(8, 12), 4);
+    assert_eq!(gcd(2 * 3 * 13 * 23, 7 * 11 * 23 * 47), 23);
+}
+
+#[test]
+fn test_lcm() {
+    assert_eq!(lcm(7, 0), 0);
+    assert_eq!(lcm(0, 7), 0);
+    assert_eq!(lcm(8, 12), 24);
+    assert_eq!(lcm(2 * 3 * 13 * 23, 7 * 11 * 23 * 47), 2 * 3 * 7 * 11 * 13 * 23 * 47);
 }
