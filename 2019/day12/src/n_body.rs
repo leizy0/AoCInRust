@@ -208,6 +208,7 @@ impl NBodySimulator {
     }
 
     pub fn cycle_len(&self) -> usize {
+        panic!("This solution isn't feasible, enable feature use_avx2 instead.");
         let mut cycle_len = 0;
         let mut simulator = self.clone();
         loop {
@@ -363,6 +364,8 @@ mod multithread {
         }
 
         pub fn cycle_len(&self) -> usize {
+            panic!("This solution isn't feasible, enable feature use_avx2 instead.");
+
             let mut cycle_len = 0;
             let mut simulator = self.clone();
             loop {
