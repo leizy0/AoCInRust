@@ -1,15 +1,15 @@
 use std::fmt::Display;
 
-pub mod amp;
-pub mod arcade;
-pub mod ascii;
-pub mod beam;
+pub mod day11;
+pub mod day13;
+pub mod day15;
+pub mod day17;
+pub mod day19;
+pub mod day21;
+pub mod day23;
 pub mod day25;
+pub mod day7;
 pub mod int_code;
-pub mod nic;
-pub mod paint;
-pub mod pilot;
-pub mod spring;
 
 #[derive(Debug)]
 pub enum Error {

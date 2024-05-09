@@ -1,5 +1,5 @@
 use day2_5_7_9_11_13_15_17_19_21_23_25::{
-    ascii::{self, Error, ScaffoldMap, ZipPathPilot, ZipRobotPath},
+    day17::{self, Error, ScaffoldMap, ZipPathPilot, ZipRobotPath},
     int_code::{
         com::SeqIntCodeComputer,
         io::{Channel, SeqIODevice, SeqInputDevice, SeqOutputDevice},
@@ -36,7 +36,7 @@ fn main() -> Result<(), Error> {
 
     for (ind, path) in one_touch_paths.iter().enumerate() {
         println!("Zipping path # {}: {}", ind, path);
-        let zip_path = ZipRobotPath::new(path, |path| ascii::text_len(path) <= 20);
+        let zip_path = ZipRobotPath::new(path, |path| day17::text_len(path) <= 20);
         println!("Main move function: {:?}", zip_path.path());
         for (ind, sub_path) in zip_path.sub_paths().iter().enumerate() {
             println!("Sub move function #{} : {}", ind, sub_path);

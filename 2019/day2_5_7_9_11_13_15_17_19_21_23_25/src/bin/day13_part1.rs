@@ -1,5 +1,5 @@
 use day2_5_7_9_11_13_15_17_19_21_23_25::{
-    arcade::{Screen, TileId},
+    day13::{Screen, TileId},
     int_code::{
         com::SeqIntCodeComputer,
         io::{Channel, SeqInputDevice, SeqOutputDevice},

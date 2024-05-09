@@ -1,5 +1,5 @@
 use day2_5_7_9_11_13_15_17_19_21_23_25::{
-    beam::{Error, Scanner},
+    day19::{Error, Scanner},
     int_code::read_int_code,
 };
 

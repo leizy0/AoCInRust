@@ -1,6 +1,6 @@
 use day2_5_7_9_11_13_15_17_19_21_23_25::{
+    day21::{DetectMode, HullDetector, RRegister, SSInstruction, WRegister},
     int_code::{com::SeqIntCodeComputer, io::SeqIODevice, read_int_code},
-    spring::{DetectMode, HullDetector, RRegister, SSInstruction, WRegister},
 };
 
 fn main() {
