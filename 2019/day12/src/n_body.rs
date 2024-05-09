@@ -208,19 +208,31 @@ impl NBodySimulator {
     }
 
     pub fn cycle_len(&self) -> usize {
-        panic!("This solution isn't feasible, enable feature use_avx2 instead.");
-        let mut cycle_len = 0;
-        let mut simulator = self.clone();
-        loop {
-            simulator.step();
-            cycle_len += 1;
+        let cycle_len_x = Self::cycle_len_1_d(&self.bodies, 0);
+        let cycle_len_y = Self::cycle_len_1_d(&self.bodies, 1);
+        let cycle_len_z = Self::cycle_len_1_d(&self.bodies, 2);
 
-            if simulator == *self {
-                break;
-            }
-        }
+        lcm(cycle_len_x, lcm(cycle_len_y, cycle_len_z))
+    }
 
-        cycle_len
+    pub fn potential_energy(&self) -> u32 {
+        self.bodies.iter().map(|b| b.potential_energy()).sum()
+    }
+
+    pub fn kinetic_energy(&self) -> u32 {
+        self.bodies.iter().map(|b| b.kinetic_energy()).sum()
+    }
+
+    pub fn total_energy(&self) -> u32 {
+        self.bodies.iter().map(|b| b.total_energy()).sum()
+    }
+
+    pub fn center_pos(&self) -> Vec3 {
+        self.bodies.iter().map(|b| b.pos).sum::<Vec3>() / (self.bodies.len() as i32)
+    }
+
+    pub fn vel_sum(&self) -> Vec3 {
+        self.bodies.iter().map(|b| b.vel).sum::<Vec3>()
     }
 
     fn step_4_bodies(&mut self) {
@@ -258,24 +270,35 @@ impl NBodySimulator {
         self.bodies[3].apply_vel();
     }
 
-    pub fn potential_energy(&self) -> u32 {
-        self.bodies.iter().map(|b| b.potential_energy()).sum()
+    fn cycle_len_1_d(bodies: &[Body], d_ind: usize) -> usize {
+        let target_pos_v = bodies.iter().map(|b| b.pos[d_ind]).collect::<Vec<_>>();
+        let target_vel_v = bodies.iter().map(|b| b.vel[d_ind]).collect::<Vec<_>>();
+        let mut pos_v = target_pos_v.clone();
+        let mut vel_v = target_vel_v.clone();
+        let mut cycle_len = 0;
+        loop {
+            Self::step_1_d(&mut pos_v, &mut vel_v);
+            cycle_len += 1;
+            if pos_v == target_pos_v && vel_v == target_vel_v {
+                break;
+            }
+        }
+
+        cycle_len
     }
 
-    pub fn kinetic_energy(&self) -> u32 {
-        self.bodies.iter().map(|b| b.kinetic_energy()).sum()
-    }
+    fn step_1_d(pos_v: &mut [i32], vel_v: &mut [i32]) {
+        debug_assert!(pos_v.len() == vel_v.len());
+        let count = pos_v.len();
+        for i in 0..count {
+            for j in (i + 1)..count {
+                let del_v = (pos_v[j] - pos_v[i]).signum();
+                vel_v[i] += del_v;
+                vel_v[j] -= del_v;
+            }
 
-    pub fn total_energy(&self) -> u32 {
-        self.bodies.iter().map(|b| b.total_energy()).sum()
-    }
-
-    pub fn center_pos(&self) -> Vec3 {
-        self.bodies.iter().map(|b| b.pos).sum::<Vec3>() / (self.bodies.len() as i32)
-    }
-
-    pub fn vel_sum(&self) -> Vec3 {
-        self.bodies.iter().map(|b| b.vel).sum::<Vec3>()
+            pos_v[i] += vel_v[i];
+        }
     }
 }
 
@@ -343,41 +366,12 @@ mod multithread {
         }
 
         pub fn step(&mut self) {
-            self.dimensions.par_iter_mut().for_each(|b1d| {
-                let pos_v = &mut b1d.pos_v;
-                let vel_v = &mut b1d.vel_v;
-                let body_count = pos_v.len();
-                assert!(
-                    pos_v.len() == vel_v.len(),
-                    "Length of position vector and velocity vector should be equal"
-                );
-                for i in 0..body_count {
-                    for j in (i + 1)..body_count {
-                        let delta_vel = (pos_v[j] - pos_v[i]).signum();
-                        vel_v[i] += delta_vel;
-                        vel_v[j] -= delta_vel;
-                    }
-
-                    pos_v[i] += vel_v[i];
-                }
-            });
+            self.dimensions.par_iter_mut().for_each(|b1d| Self::step_1_d(b1d));
         }
 
         pub fn cycle_len(&self) -> usize {
-            panic!("This solution isn't feasible, enable feature use_avx2 instead.");
-
-            let mut cycle_len = 0;
-            let mut simulator = self.clone();
-            loop {
-                simulator.step();
-                cycle_len += 1;
-
-                if simulator == *self {
-                    break;
-                }
-            }
-    
-            cycle_len
+            let cycle_lens = self.dimensions.par_iter().map(|b| Self::cycle_len_1_d(b)).collect::<Vec<_>>();
+            super::lcm(cycle_lens[0], super::lcm(cycle_lens[1], cycle_lens[2]))
         }
 
         pub fn potential_energy(&self) -> u32 {
@@ -416,6 +410,40 @@ mod multithread {
                 self.dimensions[1].vel_v.iter().sum(),
                 self.dimensions[2].vel_v.iter().sum(),
             )
+        }
+
+        fn cycle_len_1_d(target_bodies: &Bodies1D) -> usize {
+            let mut bodies = target_bodies.clone();
+            let mut cycle_len = 0;
+            loop {
+                Self::step_1_d(&mut bodies);
+                cycle_len += 1;
+                
+                if bodies == *target_bodies {
+                    break;
+                }
+            }
+
+            cycle_len
+        }
+
+        fn step_1_d(bodies: &mut Bodies1D) {
+            let pos_v = &mut bodies.pos_v;
+            let vel_v = &mut bodies.vel_v;
+            let body_count = pos_v.len();
+            debug_assert!(
+                pos_v.len() == vel_v.len(),
+                "Length of position vector and velocity vector should be equal"
+            );
+            for i in 0..body_count {
+                for j in (i + 1)..body_count {
+                    let delta_vel = (pos_v[j] - pos_v[i]).signum();
+                    vel_v[i] += delta_vel;
+                    vel_v[j] -= delta_vel;
+                }
+
+                pos_v[i] += vel_v[i];
+            }
         }
     }
 }
@@ -543,11 +571,8 @@ mod avx2 {
 
         pub fn cycle_len(&self) -> usize {
             let cycle_len_x = Self::cycle_len_1_d(&self.pos_x, &self.vel_x, &self.pad_mask, self.count);
-            println!("After {} step(s), initial state of bodies in X dimension repeats.", cycle_len_x);
             let cycle_len_y = Self::cycle_len_1_d(&self.pos_y, &self.vel_y, &self.pad_mask, self.count);
-            println!("After {} step(s), initial state of bodies in Y dimension repeats.", cycle_len_y);
             let cycle_len_z = Self::cycle_len_1_d(&self.pos_z, &self.vel_z, &self.pad_mask, self.count);
-            println!("After {} step(s), initial state of bodies in Z dimension repeats.", cycle_len_z);
 
             super::lcm(cycle_len_x, super::lcm(cycle_len_y, cycle_len_z))
         }
@@ -800,11 +825,13 @@ where
         .collect::<Result<Vec<_>, Error>>()
 }
 
+// The lowest common multiple
 fn lcm(m: usize, n: usize) -> usize {
     let gcd = gcd(m, n);
     m / gcd * n
 }
 
+// The greatest common divisor
 fn gcd(mut m: usize, mut n: usize) -> usize {
     assert!(m != 0 || n != 0);
 
