@@ -252,7 +252,7 @@ impl DeckShuffle {
             isize::try_from((ind_factor * other_constant + constant) % cards_n).unwrap();
     }
 
-    pub fn square(&mut self) {
+    pub fn double(&mut self) {
         self.append(&self.clone())
     }
 
