@@ -13,25 +13,6 @@ fn main() {
         }
     };
 
-    let mut simulator = NBodySimulator::new(init_bodies.clone());
-    let mut step_count = 0usize;
-    let report_interval = 50000000;
-
-    loop {
-        if (0..4).all(|i| simulator.nth_body(i) == init_bodies[i]) && step_count != 0 {
-            println!(
-                "After {} step(s), initial state of bodies repeats.",
-                step_count
-            );
-            break;
-        } else if step_count % report_interval == 0 {
-            println!(
-                "Initial state of bodies doesn't repeat after {} steps.",
-                step_count
-            );
-        }
-
-        simulator.step();
-        step_count += 1;
-    }
+    let simulator = NBodySimulator::new(init_bodies.clone());
+    println!("After {} step(s), initial state of bodies repeats.", simulator.cycle_len());
 }
