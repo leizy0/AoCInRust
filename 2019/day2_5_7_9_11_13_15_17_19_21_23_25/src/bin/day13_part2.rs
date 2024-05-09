@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use day2_5_7_9_11_13_15_17_19_21_23::{
-    arcade::{ArcadeCabinet, AutoPlayer, Screen, TileId},
+use day2_5_7_9_11_13_15_17_19_21_23_25::{
+    day13::{ArcadeCabinet, AutoPlayer, Screen, TileId},
     int_code::{
         com::ParaIntCodeComputer,
         io::{Channel, ParaIODevice, ParaInputDevice, ParaOutputDevice},
