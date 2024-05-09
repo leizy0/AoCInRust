@@ -23,7 +23,7 @@ fn main() {
         }
 
         cur_shuffle_count >>= 1;
-        unit_shuffle.square();
+        unit_shuffle.double();
     }
 
     let origin_ind = total_shuffle.rev_map(target_ind);
