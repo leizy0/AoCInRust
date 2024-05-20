@@ -15,7 +15,7 @@ fn main() {
     ints.sort_unstable();
 
     let expect_sum = 2020;
-    if let Some(ns) = day1::find_ints_of_sum(&ints, expect_sum, 2) {
+    if let Some(ns) = day1::find_ints_of_sum(&ints, expect_sum, 3) {
         let prod = ns.iter().fold(1, |prod, n| prod * n);
         println!(
             "In given inputs, the sum of {:?} is {}, their product is {}.",

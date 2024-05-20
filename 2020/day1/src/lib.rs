@@ -47,3 +47,49 @@ pub fn read_ints<P: AsRef<Path>>(path: P) -> Result<Vec<usize>, Error> {
         })
         .collect::<Result<Vec<_>, Error>>()
 }
+
+pub fn find_ints_of_sum(sorted_ints: &[usize], sum: usize, ints_n: usize) -> Option<Vec<usize>> {
+    let mut res = vec![0; ints_n];
+    if find_ints_of_sum_recur(sorted_ints, sum, &mut res, 0) {
+        Some(res)
+    } else {
+        None
+    }
+}
+
+fn find_ints_of_sum_recur(
+    sorted_ints: &[usize],
+    sum: usize,
+    ns: &mut [usize],
+    n_ind: usize,
+) -> bool {
+    if sorted_ints.is_empty() || ns.is_empty() {
+        return false;
+    }
+
+    if n_ind + 1 == ns.len() {
+        // Find the final number.
+        if let Ok(_) = sorted_ints.binary_search(&sum) {
+            ns[n_ind] = sum;
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    let limit = sum / (ns.len() - n_ind);
+    for (ind, n) in sorted_ints.iter().enumerate() {
+        if *n > limit {
+            // Left numbers are greater than the average of the current sum, so there's no chance to find other numbers in given ascending integers.
+            break;
+        }
+
+        ns[n_ind] = *n;
+        if find_ints_of_sum_recur(&sorted_ints[(ind + 1)..], sum - n, ns, n_ind + 1) {
+            // Found left numbers.
+            return true;
+        }
+    }
+
+    return false;
+}
