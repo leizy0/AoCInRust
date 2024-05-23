@@ -1,9 +1,9 @@
 use clap::Parser;
-use day2::{CliArgs, Constraint1};
+use day2::{CliArgs, Constraint2};
 
 fn main() {
     let args = CliArgs::parse();
-    let pws = day2::read_pws::<Constraint1, _>(&args.input_path)
+    let pws = day2::read_pws::<Constraint2, _>(&args.input_path)
         .inspect_err(|e| {
             eprintln!(
                 "Failed to read passwords from given input file({}), get error({}).",
