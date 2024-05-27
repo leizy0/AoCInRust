@@ -13,14 +13,9 @@ fn main() {
         })
         .unwrap();
     let dir = Direction::new(1, 3);
-    let mut tree_count = 0;
-    let mut cur_pos = Position::new(0, 0);
-    while let Some(tt) = map.tile(&cur_pos) {
-        if *tt == TileType::Tree {
-            tree_count += 1;
-        }
-
-        cur_pos += &dir;
-    }
+    let tree_count = map
+        .tiles_on_ray(&Position::new(0, 0), &dir)
+        .filter(|tt| **tt == TileType::Tree)
+        .count();
     println!("There are {} trees if following {:?}.", tree_count, dir);
 }

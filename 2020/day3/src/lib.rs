@@ -3,7 +3,8 @@ use std::{
     fmt::Display,
     fs::File,
     io::{self, BufRead, BufReader},
-    ops::AddAssign,
+    iter,
+    ops::{Add, AddAssign},
     path::{Path, PathBuf},
 };
 
@@ -64,6 +65,39 @@ pub struct Position {
     c: usize,
 }
 
+impl Add<&Direction> for Position {
+    type Output = Self;
+
+    fn add(mut self, rhs: &Direction) -> Self::Output {
+        self += rhs;
+        self
+    }
+}
+
+impl Add<Direction> for Position {
+    type Output = Self;
+
+    fn add(self, rhs: Direction) -> Self::Output {
+        self + &rhs
+    }
+}
+
+impl Add<&Direction> for &Position {
+    type Output = Position;
+
+    fn add(self, rhs: &Direction) -> Self::Output {
+        self.clone() + rhs
+    }
+}
+
+impl Add<Direction> for &Position {
+    type Output = Position;
+
+    fn add(self, rhs: Direction) -> Self::Output {
+        self + &rhs
+    }
+}
+
 impl AddAssign<&Direction> for Position {
     fn add_assign(&mut self, rhs: &Direction) {
         self.r += rhs.delta_r;
@@ -90,6 +124,15 @@ pub struct Map {
 }
 
 impl Map {
+    pub fn tiles_on_ray(
+        &self,
+        origin: &Position,
+        dir: &Direction,
+    ) -> impl Iterator<Item = &TileType> {
+        let dir = dir.clone();
+        iter::successors(Some(origin.clone()), move |p| Some(p + &dir)).map_while(|p| self.tile(&p))
+    }
+
     pub fn tile(&self, pos: &Position) -> Option<&TileType> {
         self.pos_to_ind(pos).and_then(|ind| self.tiles.get(ind))
     }
