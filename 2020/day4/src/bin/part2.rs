@@ -31,11 +31,11 @@ fn main() {
         .filter(|pp| {
             prop_validators
                 .iter()
-                .all(|p_vad| pp.contains_prop(p_vad.name()))
+                .all(|vad| pp.prop(vad.name()).is_some_and(|s| vad.validate(s)))
         })
         .count();
     println!(
-        "There are {} valid passports in given {} records.",
+        "There are {} valid passports in given {} records after using value validation.",
         valid_counts,
         passports.len()
     );
