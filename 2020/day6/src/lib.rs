@@ -34,17 +34,26 @@ pub struct CliArgs {
 
 pub struct GroupAnwser {
     que_app_counts: HashMap<char, usize>,
+    mem_count: usize,
 }
 
 impl GroupAnwser {
     pub fn new() -> Self {
         Self {
             que_app_counts: HashMap::new(),
+            mem_count: 0,
         }
     }
 
     pub fn any_app_n(&self) -> usize {
         self.que_app_counts.len()
+    }
+
+    pub fn all_app_n(&self) -> usize {
+        self.que_app_counts
+            .iter()
+            .filter(|(_, n)| **n == self.mem_count)
+            .count()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -60,6 +69,7 @@ impl GroupAnwser {
             }
         }
 
+        self.mem_count += 1;
         Ok(())
     }
 }
