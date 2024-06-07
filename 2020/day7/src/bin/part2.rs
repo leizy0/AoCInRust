@@ -13,10 +13,10 @@ fn main() {
         })
         .unwrap();
     let bag_qualifier = "shiny gold";
-    if let Some(contained_n) = bag_rules.contained_kinds_n(bag_qualifier) {
+    if let Some(contain_n) = bag_rules.contain_bags_n(bag_qualifier) {
         println!(
-            "There are {} kinds of bag can contain at least one specified {} bag.",
-            contained_n, bag_qualifier
+            "According to given rules, one {} bag can contain {} bags in total.",
+            bag_qualifier, contain_n
         );
     } else {
         println!("There's no {} bag in given rules.", bag_qualifier);

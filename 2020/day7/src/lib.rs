@@ -1,10 +1,12 @@
 use std::{
+    cell::RefCell,
     collections::{HashMap, HashSet, LinkedList},
     error,
     fmt::Display,
     fs::File,
     io::{self, BufRead, BufReader},
     path::{Path, PathBuf},
+    rc::Rc,
 };
 
 use clap::Parser;
@@ -34,7 +36,7 @@ pub struct CliArgs {
 }
 
 pub struct BagRules {
-    bag_qualifiers: HashMap<String, usize>, // <bag qualifier, bag index>
+    bag_indices: HashMap<String, usize>, // <bag qualifier, bag index>
     contain_rules: Vec<LinkedList<(usize, usize)>>, // vec[index of bag contains] = list of (Index of bag be contained, count of contained bag).
     contained_rules: Vec<LinkedList<(usize, usize)>>, // vec[Index of bag be contained] = list of (index of bag contains, count of contained bag).
 }
@@ -42,7 +44,7 @@ pub struct BagRules {
 impl BagRules {
     pub fn contained_kinds_n(&self, qualifier: &str) -> Option<usize> {
         // BFS for bag nodes connected with given bag node in contained graph(self.contained_rules).
-        self.bag_qualifiers.get(qualifier).map(|contained_ind| {
+        self.bag_indices.get(qualifier).map(|contained_ind| {
             let mut contain_inds = HashSet::new();
             let mut search_inds = LinkedList::new();
             search_inds.push_back(contained_ind);
@@ -64,9 +66,35 @@ impl BagRules {
         })
     }
 
+    pub fn contain_bags_n(&self, qualifier: &str) -> Option<usize> {
+        self.bag_indices.get(qualifier).map(|ind| {
+            let cache = Rc::new(RefCell::new(HashMap::new()));
+            self.contain_bags_n_recur(*ind, cache)
+        })
+    }
+
+    fn contain_bags_n_recur(
+        &self,
+        contain_ind: usize,
+        cache: Rc<RefCell<HashMap<usize, usize>>>,
+    ) -> usize {
+        if cache.borrow().contains_key(&contain_ind) {
+            cache.borrow()[&contain_ind]
+        } else {
+            let n = self.contain_rules[contain_ind]
+                .iter()
+                .fold(0, |acc, (c_ind, c_count)| {
+                    acc + c_count + c_count * self.contain_bags_n_recur(*c_ind, cache.clone())
+                });
+            cache.borrow_mut().insert(contain_ind, n);
+
+            n
+        }
+    }
+
     fn new() -> Self {
         Self {
-            bag_qualifiers: HashMap::new(),
+            bag_indices: HashMap::new(),
             contain_rules: Vec::new(),
             contained_rules: Vec::new(),
         }
@@ -105,7 +133,7 @@ impl BagRules {
 
     fn get_or_add_bag(&mut self, qualifier: &str) -> usize {
         *self
-            .bag_qualifiers
+            .bag_indices
             .entry(qualifier.to_string())
             .or_insert_with(|| {
                 let ind = self.contain_rules.len();
