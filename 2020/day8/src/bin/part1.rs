@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use clap::Parser;
-use day8::{CliArgs, GCState, GameConsle};
+use day8::{CliArgs, GCState, GameConsole};
 
 fn main() {
     let args = CliArgs::parse();
@@ -14,7 +14,7 @@ fn main() {
             )
         })
         .unwrap();
-    let mut console = GameConsle::new();
+    let mut console = GameConsole::new();
     let mut inst_ind_set = HashSet::new();
     match console.run_while(&code, &mut |state: &GCState| inst_ind_set.insert(state.inst_ptr)) {
         Ok(state) => println!("Before the first repeated execution of a same instruction(at {}), the accumulator is {}.", state.inst_ptr, state.acc),

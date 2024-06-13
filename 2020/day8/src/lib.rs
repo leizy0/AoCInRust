@@ -39,9 +39,10 @@ pub struct CliArgs {
     pub input_path: PathBuf,
 }
 
+#[derive(Debug, Clone, Copy)]
 pub enum Instruction {
     Acc(isize),
-    Nop,
+    Nop(isize),
     Jmp(isize),
 }
 
@@ -75,7 +76,9 @@ impl Instruction {
     pub fn try_new_nop(text: &str) -> Option<Self> {
         static PATTERN: Lazy<Regex> = Lazy::new(|| Regex::new(r"nop ([+|-]?\d+)").unwrap());
 
-        Some(Self::Nop).filter(|_| PATTERN.is_match(text))
+        PATTERN
+            .captures(text)
+            .map(|caps| Self::Nop(caps[1].parse::<isize>().unwrap()))
     }
 
     pub fn try_new_jmp(text: &str) -> Option<Self> {
@@ -101,8 +104,8 @@ impl GCState {
     }
 }
 
-pub struct GameConsle;
-impl GameConsle {
+pub struct GameConsole;
+impl GameConsole {
     pub fn new() -> Self {
         Self
     }
@@ -122,7 +125,7 @@ impl GameConsle {
                     state.acc += n;
                     state.inst_ptr += 1;
                 }
-                Instruction::Nop => state.inst_ptr += 1,
+                Instruction::Nop(_) => state.inst_ptr += 1,
                 Instruction::Jmp(offset) => {
                     state.inst_ptr = state
                         .inst_ptr
