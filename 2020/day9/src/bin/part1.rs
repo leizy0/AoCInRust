@@ -18,34 +18,15 @@ fn main() {
         return;
     }
 
-    let mut addends = Vec::from_iter(nums.iter().take(ADDEND_LEN).copied());
-    for sum_ind in ADDEND_LEN..nums.len() {
-        let sum = nums[sum_ind];
-        addends.sort_unstable();
-        let mut is_valid = false;
-        for addend in &addends {
-            if *addend > sum / 2 {
-                break;
-            }
-
-            let expect_n = sum - *addend;
-            if let Ok(_) = addends.binary_search(&expect_n) {
-                is_valid = true;
-                break;
-            }
-        }
-
-        if !is_valid {
-            println!("The first invalid value according to XMAS rule is {}.", sum);
-            return;
-        }
-
-        let first_addend_ind = addends.binary_search(&nums[sum_ind - ADDEND_LEN]).unwrap();
-        addends[first_addend_ind] = sum;
+    if let Some(invalid_value) = day9::invalid_xmax_v(&nums, ADDEND_LEN) {
+        println!(
+            "The first invalid value according to XMAS rule is {}.",
+            invalid_value
+        );
+    } else {
+        println!(
+            "There isn't any invalid value according to XMAS rule in given numbers({} in total)",
+            nums.len()
+        );
     }
-
-    println!(
-        "There isn't any invalid value according to XMAS rule in given numbers({} in total)",
-        nums.len()
-    );
 }

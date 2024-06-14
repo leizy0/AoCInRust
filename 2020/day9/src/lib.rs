@@ -45,3 +45,32 @@ pub fn read_num<P: AsRef<Path>>(path: P) -> Result<Vec<usize>, Error> {
         })
         .collect::<Result<Vec<_>, Error>>()
 }
+
+pub fn invalid_xmax_v(nums: &[usize], addend_len: usize) -> Option<usize> {
+    let mut addends = Vec::from_iter(nums.iter().take(addend_len).copied());
+    for sum_ind in addend_len..nums.len() {
+        let sum = nums[sum_ind];
+        addends.sort_unstable();
+        let mut is_valid = false;
+        for addend in &addends {
+            if *addend > sum / 2 {
+                break;
+            }
+
+            let expect_n = sum - *addend;
+            if let Ok(_) = addends.binary_search(&expect_n) {
+                is_valid = true;
+                break;
+            }
+        }
+
+        if !is_valid {
+            return Some(sum);
+        }
+
+        let first_addend_ind = addends.binary_search(&nums[sum_ind - addend_len]).unwrap();
+        addends[first_addend_ind] = sum;
+    }
+
+    None
+}
