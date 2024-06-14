@@ -23,7 +23,7 @@ fn main() {
         let mut start_ind = 0;
         let mut stop_ind = 0;
         let mut sum = 0;
-        while stop_ind <= nums_n {
+        while stop_ind < nums_n {
             // Extend to end if sum is smaller than target.
             while sum < invalid_value && stop_ind < nums_n {
                 sum += nums[stop_ind];
