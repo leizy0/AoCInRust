@@ -3,10 +3,12 @@ use std::{
     fmt::Display,
     fs::File,
     io::{self, BufRead, BufReader},
+    iter,
     path::{Path, PathBuf},
 };
 
 use clap::Parser;
+use int_enum::IntEnum;
 use once_cell::sync::Lazy;
 
 #[derive(Debug)]
@@ -37,11 +39,12 @@ pub struct CLIArgs {
     pub input_path: PathBuf,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, IntEnum)]
 pub enum TileType {
-    Floor,
-    Empty,
-    Occupied,
+    Floor = 0,
+    Empty = 1,
+    Occupied = 2,
 }
 
 impl TryFrom<char> for TileType {
@@ -58,7 +61,7 @@ impl TryFrom<char> for TileType {
 }
 
 #[derive(Debug, Clone, Copy)]
-enum Direction {
+pub enum Direction {
     TopLeft,
     Top,
     TopRight,
@@ -88,7 +91,7 @@ impl Direction {
     }
 }
 
-struct Position {
+pub struct Position {
     r: usize,
     c: usize,
 }
@@ -98,7 +101,7 @@ impl Position {
         Self { r, c }
     }
 
-    pub fn along_dir(&self, dir: Direction) -> Option<Self> {
+    pub fn along(&self, dir: Direction) -> Option<Self> {
         match dir {
             Direction::TopLeft if self.r > 0 && self.c > 0 => {
                 Some(Position::new(self.r - 1, self.c - 1))
@@ -116,7 +119,7 @@ impl Position {
 }
 
 #[derive(Debug, Clone)]
-struct SeatMapBuffer {
+pub struct SeatMapBuffer {
     tiles: Vec<TileType>,
     row_n: usize,
     col_n: usize,
@@ -152,34 +155,121 @@ impl SeatMapBuffer {
     }
 }
 
+pub struct Environment {
+    tt_counts: [usize; 3],
+}
+
+impl Environment {
+    pub fn new(tt_counts: &[usize; 3]) -> Self {
+        Self {
+            tt_counts: *tt_counts,
+        }
+    }
+
+    pub fn count(&self, tt: TileType) -> usize {
+        self.tt_counts[u8::from(tt) as usize]
+    }
+}
+
+pub trait EnvChecker {
+    fn look_around(&self, pos: &Position, seats: &SeatMapBuffer) -> Environment;
+}
+
+pub trait ChangeRule {
+    fn new_state(&self, old_state: TileType, env: &Environment) -> Option<TileType>;
+}
+
+pub struct Env8Neighbors;
+impl EnvChecker for Env8Neighbors {
+    fn look_around(&self, pos: &Position, seats: &SeatMapBuffer) -> Environment {
+        let mut counts = [0usize; 3];
+        for neighbor_p in Direction::all().iter().filter_map(|dir| pos.along(*dir)) {
+            if let Some(tt) = seats.tile(&neighbor_p) {
+                counts[u8::from(*tt) as usize] += 1;
+            }
+        }
+
+        Environment::new(&counts)
+    }
+}
+
+pub struct Env8Rays;
+impl EnvChecker for Env8Rays {
+    fn look_around(&self, pos: &Position, seats: &SeatMapBuffer) -> Environment {
+        let mut counts = [0usize; 3];
+        for (first_p, dir) in Direction::all()
+            .iter()
+            .filter_map(|dir| pos.along(*dir).map(|p| (p, *dir)))
+        {
+            let mut has_seat = false;
+            for tt in iter::successors(Some(first_p), |p| p.along(dir))
+                .map_while(|p| seats.tile(&p))
+            {
+                if *tt != TileType::Floor {
+                    counts[u8::from(*tt) as usize] += 1;
+                    has_seat = true;
+                    break;
+                }
+            }
+
+            if !has_seat {
+                counts[u8::from(TileType::Floor) as usize] += 1;
+            }
+        }
+
+        Environment::new(&counts)
+    }
+}
+
+pub struct ChgForOccupiedN {
+    occ_th: usize,
+}
+
+impl ChgForOccupiedN {
+    pub fn new(occ_threshold: usize) -> Self {
+        assert!(
+            occ_threshold > 0,
+            "Threshold for changing from empty to occupied must be larger than 0, given {}.",
+            occ_threshold
+        );
+        Self {
+            occ_th: occ_threshold,
+        }
+    }
+}
+
+impl ChangeRule for ChgForOccupiedN {
+    fn new_state(&self, old_state: TileType, env: &Environment) -> Option<TileType> {
+        let occ_count = env.count(TileType::Occupied);
+        match old_state {
+            TileType::Empty if occ_count == 0 => Some(TileType::Occupied),
+            TileType::Occupied if occ_count >= self.occ_th => Some(TileType::Empty),
+            _ => None,
+        }
+    }
+}
+
 pub struct SeatMap {
     seat_bufs: [SeatMapBuffer; 2],
     cur_buf_ind: usize,
 }
 
 impl SeatMap {
-    pub fn step(&mut self) -> usize {
+    pub fn step(&mut self, checker: &dyn EnvChecker, rule: &dyn ChangeRule) -> usize {
         let (r_buf, w_buf) = self.rw_buf();
         let mut chg_count = 0;
         for r in 0..r_buf.row_n() {
             for c in 0..r_buf.col_n() {
                 let pos = Position::new(r, c);
-                let neigh_occ_count = Direction::all()
-                    .iter()
-                    .filter_map(|dir| pos.along_dir(*dir))
-                    .filter(|p| r_buf.tile(&p).is_some_and(|tt| *tt == TileType::Occupied))
-                    .count();
-                match r_buf.tile(&pos).unwrap() {
-                    TileType::Empty if neigh_occ_count == 0 => {
-                        *w_buf.tile_mut(&pos).unwrap() = TileType::Occupied;
-                        chg_count += 1;
-                    }
-                    TileType::Occupied if neigh_occ_count >= 4 => {
-                        *w_buf.tile_mut(&pos).unwrap() = TileType::Empty;
-                        chg_count += 1;
-                    }
-                    tt => *w_buf.tile_mut(&pos).unwrap() = *tt,
-                }
+                let env = checker.look_around(&pos, r_buf);
+                let cur_tt = *r_buf.tile(&pos).unwrap();
+                *w_buf.tile_mut(&pos).unwrap() = if let Some(new_tt) = rule.new_state(cur_tt, &env)
+                {
+                    chg_count += 1;
+                    new_tt
+                } else {
+                    cur_tt
+                };
             }
         }
         self.swap_buf();

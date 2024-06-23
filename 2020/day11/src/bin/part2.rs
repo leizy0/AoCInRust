@@ -1,5 +1,5 @@
 use clap::Parser;
-use day11::{CLIArgs, ChgForOccupiedN, Env8Neighbors, TileType};
+use day11::{CLIArgs, ChgForOccupiedN, Env8Rays, TileType};
 
 fn main() {
     let args = CLIArgs::parse();
@@ -13,8 +13,8 @@ fn main() {
         })
         .unwrap();
 
-    let checker = Env8Neighbors {};
-    let rule = ChgForOccupiedN::new(4);
+    let checker = Env8Rays {};
+    let rule = ChgForOccupiedN::new(5);
     let mut step_count = 0;
     loop {
         let chg_count = seat_map.step(&checker, &rule);
