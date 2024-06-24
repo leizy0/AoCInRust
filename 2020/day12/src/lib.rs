@@ -217,6 +217,71 @@ impl Ship {
     }
 }
 
+pub struct RelativeShip {
+    pos: Position,
+    wp_pos: Position,
+}
+
+impl RelativeShip {
+    pub fn new(waypoint: &Position) -> Self {
+        Self {
+            pos: Position::new(0, 0),
+            wp_pos: waypoint.clone(),
+        }
+    }
+
+    pub fn pos(&self) -> Position {
+        self.pos.clone()
+    }
+
+    pub fn handle(&mut self, inst: &Instruction) -> Result<(), Error> {
+        match inst {
+            Instruction::North(dist) => self.wp_pos.y -= dist,
+            Instruction::South(dist) => self.wp_pos.y += dist,
+            Instruction::West(dist) => self.wp_pos.x -= dist,
+            Instruction::East(dist) => self.wp_pos.x += dist,
+            Instruction::Left(deg) => self.turn_wp_clockwise(-deg)?,
+            Instruction::Right(deg) => self.turn_wp_clockwise(*deg)?,
+            Instruction::Forward(times) => self.forward_to_wp(*times),
+        }
+        Ok(())
+    }
+
+    fn turn_wp_clockwise(&mut self, deg: isize) -> Result<(), Error> {
+        if deg % 90 != 0 {
+            return Err(Error::InvalidTrunDegree(deg));
+        }
+
+        let org_wp = self.wp_pos.clone();
+        // Count of quarters the waypoint turns in clockwise.
+        match (deg / 90 % 4 + 4) % 4 {
+            // 90 degree.
+            1 => {
+                self.wp_pos.x = -org_wp.y;
+                self.wp_pos.y = org_wp.x;
+            },
+            // 180 degree.
+            2 => {
+                self.wp_pos.x = -org_wp.x;
+                self.wp_pos.y = -org_wp.y;
+            },
+            // 270 degree.
+            3 => {
+                self.wp_pos.x = org_wp.y;
+                self.wp_pos.y = -org_wp.x;
+            }
+            _ => (),
+        }
+
+        Ok(())
+    }
+
+    fn forward_to_wp(&mut self, times: isize) {
+        self.pos.x += times * self.wp_pos.x;
+        self.pos.y += times * self.wp_pos.y;
+    }
+}
+
 pub fn read_insts<P: AsRef<Path>>(path: P) -> Result<Vec<Instruction>, Error> {
     let file = File::open(path).map_err(Error::IOError)?;
     let reader = BufReader::new(file);

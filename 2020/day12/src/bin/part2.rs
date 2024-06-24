@@ -1,5 +1,5 @@
 use clap::Parser;
-use day12::{CLIArgs, Ship};
+use day12::{CLIArgs, Position, RelativeShip};
 
 fn main() {
     let args = CLIArgs::parse();
@@ -13,7 +13,7 @@ fn main() {
         })
         .unwrap();
 
-    let mut ship = Ship::new();
+    let mut ship = RelativeShip::new(&Position::new(10, -1));
     let start_pos = ship.pos();
     for inst in &insts {
         match ship.handle(inst) {
