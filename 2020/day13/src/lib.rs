@@ -34,7 +34,7 @@ pub struct CLIArgs {
     pub input_path: PathBuf,
 }
 
-pub fn read_notes<P: AsRef<Path>>(path: P) -> Result<(usize, Vec<usize>), Error> {
+pub fn read_notes<P: AsRef<Path>>(path: P) -> Result<(usize, Vec<(usize, usize)>), Error> {
     let file = File::open(path).map_err(Error::IOError)?;
     let reader = BufReader::new(file);
     let mut lines = reader.lines();
@@ -51,9 +51,44 @@ pub fn read_notes<P: AsRef<Path>>(path: P) -> Result<(usize, Vec<usize>), Error>
         .and_then(|l| {
             l.map_err(Error::IOError).map(|s| {
                 s.split(',')
-                    .filter_map(|sch_s| sch_s.parse::<usize>().ok())
+                    .enumerate()
+                    .filter_map(|(interval, cycle_str)| cycle_str.parse::<usize>().ok().map(|cycle| (cycle, interval)))
                     .collect::<Vec<_>>()
             })
         })?;
     Ok((depart_time, bus_schedules))
+}
+
+pub fn lcm(m: usize, n: usize) -> usize {
+    if m == 0 || n == 0 {
+        0
+    } else {
+        m / gcd(m, n) * n
+    }
+}
+
+fn gcd(mut m: usize, mut n: usize) -> usize {
+    while n != 0 {
+        let rem = m % n;
+        m = n;
+        n = rem;
+    }
+
+    m
+}
+
+#[test]
+fn test_gcd() {
+    assert_eq!(gcd(0, 5), 5);
+    assert_eq!(gcd(5, 0), 5);
+    assert_eq!(gcd(32, 48), 16);
+    assert_eq!(gcd(5, 7), 1);
+}
+
+#[test]
+fn test_lcm() {
+    assert_eq!(lcm(0, 5), 0);
+    assert_eq!(lcm(5, 0), 0);
+    assert_eq!(lcm(32, 48), 96);
+    assert_eq!(lcm(5, 7), 35);
 }
