@@ -1,5 +1,4 @@
 use std::{
-    collections::HashMap,
     error,
     fmt::Display,
     fs::File,
@@ -35,13 +34,18 @@ pub struct CLIArgs {
 
 #[derive(Debug, Clone)]
 pub struct Mask {
-    and_mask: usize,
-    or_mask: usize,
+    float_mask: usize,
+    fixed_mask: usize,
 }
 
 impl Mask {
-    pub fn process(&self, v: usize) -> usize {
-        v & self.and_mask | self.or_mask
+    fn proc_value(&self, value: usize) -> usize {
+        value & self.float_mask | self.fixed_mask
+    }
+
+    fn proc_addr(&self, addr: usize) -> MemAddrGroup {
+        let fixed_addr = addr & (!self.float_mask) | self.fixed_mask;
+        MemAddrGroup::new(self.float_mask, fixed_addr)
     }
 }
 
@@ -95,7 +99,10 @@ impl Operation {
                 }
             }
 
-            Operation::SetMask(Mask { and_mask, or_mask })
+            Operation::SetMask(Mask {
+                float_mask: and_mask,
+                fixed_mask: or_mask,
+            })
         })
     }
 
@@ -111,19 +118,143 @@ impl Operation {
     }
 }
 
-pub struct SPCSimulator {
-    mem: HashMap<usize, usize>,
-    mask: Mask,
+struct MemAddrIterator {
+    float_bit_masks: Vec<usize>,
+    fixed_addr: usize,
+    float_ind: usize,
+    float_limit: usize,
 }
 
-impl SPCSimulator {
-    pub fn new() -> Self {
+impl Iterator for MemAddrIterator {
+    type Item = usize;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.float_ind < self.float_limit {
+            let mut float_addr = self.float_ind;
+            let mut addr = self.fixed_addr;
+            for mask in &self.float_bit_masks {
+                if float_addr == 0 {
+                    break;
+                }
+
+                if float_addr & 1 != 0 {
+                    addr |= mask;
+                }
+
+                float_addr >>= 1;
+            }
+            self.float_ind += 1;
+
+            Some(addr)
+        } else {
+            None
+        }
+    }
+}
+
+impl MemAddrIterator {
+    pub fn new(mut float_mask: usize, fixed_addr: usize) -> Self {
+        let mut float_bit_masks = Vec::new();
+        let mut bit_mask = 1;
+        while float_mask > 0 {
+            if float_mask & 1 != 0 {
+                float_bit_masks.push(bit_mask);
+            }
+
+            bit_mask <<= 1;
+            float_mask >>= 1;
+        }
+
+        let float_limit = 1 << float_bit_masks.len();
         Self {
-            mem: HashMap::new(),
+            float_bit_masks,
+            fixed_addr,
+            float_ind: 0,
+            float_limit,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct MemAddrGroup {
+    float_mask: usize,
+    fixed_addr: usize,
+}
+
+impl IntoIterator for &MemAddrGroup {
+    type Item = usize;
+
+    type IntoIter = MemAddrIterator;
+
+    fn into_iter(self) -> Self::IntoIter {
+        MemAddrIterator::new(self.float_mask, self.fixed_addr)
+    }
+}
+
+impl MemAddrGroup {
+    pub fn new(float_mask: usize, fixed_addr: usize) -> Self {
+        debug_assert!(
+            float_mask & fixed_addr == 0,
+            "The range of fixed address should be out of range of float mask."
+        );
+        Self {
+            float_mask,
+            fixed_addr,
+        }
+    }
+
+    pub fn new_single(addr: usize) -> Self {
+        Self {
+            float_mask: 0,
+            fixed_addr: addr,
+        }
+    }
+
+    pub fn contain(&self, addr: usize) -> bool {
+        addr & !self.float_mask == self.fixed_addr
+    }
+}
+
+#[derive(Debug, Clone)]
+struct MemAssignment {
+    addr_grp: MemAddrGroup,
+    value: usize,
+}
+
+impl MemAssignment {
+    pub fn new(addr_grp: MemAddrGroup, value: usize) -> Self {
+        Self { addr_grp, value }
+    }
+
+    pub fn addr_grp(&self) -> &MemAddrGroup {
+        &self.addr_grp
+    }
+
+    pub fn value(&self) -> usize {
+        self.value
+    }
+}
+
+pub enum MaskMode {
+    MaskAddr,
+    MaskValue,
+}
+
+pub struct SPComputer {
+    mem: Vec<MemAssignment>,
+    mask: Mask,
+    mask_mode: MaskMode,
+}
+
+impl SPComputer {
+    pub fn new(mask_mode: MaskMode) -> Self {
+        Self {
+            mem: Vec::new(),
             mask: Mask {
-                and_mask: 0,
-                or_mask: 0,
+                float_mask: 0,
+                fixed_mask: 0,
             },
+            mask_mode,
         }
     }
 
@@ -131,13 +262,39 @@ impl SPCSimulator {
         match op {
             Operation::SetMask(new_mask) => self.mask = new_mask.clone(),
             Operation::SetMemWithMask(ind, value) => {
-                self.mem.insert(*ind, self.mask.process(*value));
+                self.set_mem(*ind, *value);
             }
         }
     }
 
-    pub fn non_zero_mem(&self) -> Vec<(usize, usize)> {
-        self.mem.iter().map(|(k, v)| (*k, *v)).collect()
+    pub fn non_zero_mem_sum(&self) -> usize {
+        let mut sum = 0;
+        for (ind, mem_ass) in self.mem.iter().enumerate() {
+            let mut final_left_count = 0;
+            for addr in mem_ass.addr_grp() {
+                if !self.mem[(ind + 1)..]
+                    .iter()
+                    .any(|later_ass| later_ass.addr_grp().contain(addr))
+                {
+                    final_left_count += 1;
+                }
+            }
+
+            sum += final_left_count * mem_ass.value();
+        }
+
+        sum
+    }
+
+    fn set_mem(&mut self, ind: usize, value: usize) {
+        let mem_ass = match self.mask_mode {
+            MaskMode::MaskAddr => MemAssignment::new(self.mask.proc_addr(ind), value),
+            MaskMode::MaskValue => {
+                MemAssignment::new(MemAddrGroup::new_single(ind), self.mask.proc_value(value))
+            }
+        };
+
+        self.mem.push(mem_ass);
     }
 }
 

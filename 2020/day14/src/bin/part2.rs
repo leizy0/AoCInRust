@@ -12,7 +12,7 @@ fn main() {
             )
         })
         .unwrap();
-    let mut computer = SPComputer::new(MaskMode::MaskValue);
+    let mut computer = SPComputer::new(MaskMode::MaskAddr);
     for op in &ops {
         computer.execute(op);
     }
