@@ -162,19 +162,17 @@ pub fn map_field_with_tickets(
     let fields_n = rules.len();
     let mut prob_rule_inds_of_fields = vec![(0..fields_n).collect::<HashSet<usize>>(); fields_n];
     let mut temp_r_inds = Vec::<usize>::with_capacity(rules.len());
-    for ticket in tickets {
-        for (f_ind, field) in ticket.into_iter().enumerate() {
-            let prob_rule_inds = &mut prob_rule_inds_of_fields[f_ind];
-            temp_r_inds.clear();
-            temp_r_inds.extend(prob_rule_inds.iter());
-            for r_ind in temp_r_inds.iter().copied() {
-                if !rules[r_ind].contains(*field) {
-                    // Remove index of violated rule.
-                    prob_rule_inds.remove(&r_ind);
-                    if prob_rule_inds.is_empty() {
-                        // One field doesn't have any rule that it always obey.
-                        return Err(Error::NullMappedTicketField(f_ind));
-                    }
+
+    for (f_ind, r_inds) in prob_rule_inds_of_fields.iter_mut().enumerate() {
+        temp_r_inds.clear();
+        temp_r_inds.extend(r_inds.iter());
+        for r_ind in temp_r_inds.iter() {
+            if tickets.iter().map(|t| t.into_iter().nth(f_ind).unwrap()).any(|f| !rules[*r_ind].contains(*f)) {
+                // Remove index of violated rule.
+                r_inds.remove(&r_ind);
+                if r_inds.is_empty() {
+                    // One field doesn't have any rule that it always obey.
+                    return Err(Error::NullMappedTicketField(f_ind));
                 }
             }
         }
