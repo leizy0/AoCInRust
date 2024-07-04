@@ -1,4 +1,5 @@
 use std::{
+    collections::{HashMap, HashSet},
     fmt::Display,
     fs::File,
     io::{self, BufRead, BufReader},
@@ -17,6 +18,8 @@ pub enum Error {
     NoOwnTicket,
     InvalidFieldRule(String),
     InvalidTicketField(String),
+    NullMappedTicketField(usize), // Field index
+    NoMapOnTickets,
 }
 
 impl Display for Error {
@@ -26,6 +29,8 @@ impl Display for Error {
             Error::NoOwnTicket => write!(f, "No own ticket found"),
             Error::InvalidFieldRule(s) => write!(f, "Invalid filed rule: {}", s),
             Error::InvalidTicketField(s) => write!(f, "Invalid ticket filed: {}", s),
+            Error::NullMappedTicketField(f_ind) => write!(f, "Value in field(#{}) can't be mapped(violates all known rules)", f_ind),
+            Error::NoMapOnTickets => write!(f, "There's no map from ticket field to field rule that makes all tickets have an united field order according to given rules."),
         }
     }
 }
@@ -63,7 +68,7 @@ impl TryFrom<&str> for FieldRule {
                 let ranges = RANGE_PATTERN
                     .captures_iter(&caps["ranges"])
                     .map(|caps| {
-                        (caps[1].parse::<usize>().unwrap()..(caps[2].parse::<usize>().unwrap() + 1))
+                        caps[1].parse::<usize>().unwrap()..(caps[2].parse::<usize>().unwrap() + 1)
                     })
                     .collect();
 
@@ -73,7 +78,11 @@ impl TryFrom<&str> for FieldRule {
 }
 
 impl FieldRule {
-    pub fn contain(&self, n: usize) -> bool {
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn contains(&self, n: usize) -> bool {
         self.ranges.iter().any(|r| r.contains(&n))
     }
 }
@@ -144,4 +153,70 @@ pub fn read_ticket_info<P: AsRef<Path>>(
         })
         .collect::<Result<Vec<_>, Error>>()?;
     Ok((field_rules, own_ticket, other_tickets))
+}
+
+pub fn map_field_with_tickets(
+    rules: &[FieldRule],
+    tickets: &[Ticket],
+) -> Result<HashMap<String, usize>, Error> {
+    let fields_n = rules.len();
+    let mut prob_rule_inds_of_fields = vec![(0..fields_n).collect::<HashSet<usize>>(); fields_n];
+    let mut temp_r_inds = Vec::<usize>::with_capacity(rules.len());
+    for ticket in tickets {
+        for (f_ind, field) in ticket.into_iter().enumerate() {
+            let prob_rule_inds = &mut prob_rule_inds_of_fields[f_ind];
+            temp_r_inds.clear();
+            temp_r_inds.extend(prob_rule_inds.iter());
+            for r_ind in temp_r_inds.iter().copied() {
+                if !rules[r_ind].contains(*field) {
+                    // Remove index of violated rule.
+                    prob_rule_inds.remove(&r_ind);
+                    if prob_rule_inds.is_empty() {
+                        // One field doesn't have any rule that it always obey.
+                        return Err(Error::NullMappedTicketField(f_ind));
+                    }
+                }
+            }
+        }
+    }
+
+    let mut field_rule_inds = vec![0; prob_rule_inds_of_fields.len()];
+    if !unique_perm_in_cartessian(
+        &prob_rule_inds_of_fields,
+        &mut field_rule_inds,
+        &mut HashSet::new(),
+        0,
+    ) {
+        return Err(Error::NoMapOnTickets);
+    }
+
+    Ok(field_rule_inds
+        .iter()
+        .enumerate()
+        .map(|(f_ind, r_ind)| (rules[*r_ind].name().to_string(), f_ind))
+        .collect())
+}
+
+fn unique_perm_in_cartessian(
+    num_sets: &Vec<HashSet<usize>>,
+    perm: &mut Vec<usize>,
+    used_nums: &mut HashSet<usize>,
+    set_ind: usize,
+) -> bool {
+    if set_ind >= num_sets.len() {
+        return true;
+    }
+
+    for n in num_sets[set_ind].iter() {
+        if used_nums.insert(*n) {
+            perm[set_ind] = *n;
+            if unique_perm_in_cartessian(num_sets, perm, used_nums, set_ind + 1) {
+                return true;
+            }
+
+            used_nums.remove(n);
+        }
+    }
+
+    false
 }

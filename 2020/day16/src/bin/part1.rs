@@ -12,10 +12,11 @@ fn main() {
             )
         })
         .unwrap();
+
     let invalid_sum = other_tickets
         .iter()
         .flat_map(|t| t)
-        .filter(|n| !field_rules.iter().any(|r| r.contain(**n)))
+        .filter(|n| !field_rules.iter().any(|r| r.contains(**n)))
         .sum::<usize>();
     println!(
         "The ticket scanning rate(sum of invalid ticket field) is {}.",
