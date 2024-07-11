@@ -1,5 +1,5 @@
 use clap::Parser;
-use day17::{CLIArgs, CubeSpace3D, CubeSpaceSimulator};
+use day17::{CLIArgs, CubeSpace4D, CubeSpaceSimulator};
 
 fn main() {
     let args = CLIArgs::parse();
@@ -12,7 +12,7 @@ fn main() {
             )
         })
         .unwrap();
-    let mut simulator = CubeSpaceSimulator::<CubeSpace3D>::new(&init_state);
+    let mut simulator = CubeSpaceSimulator::<CubeSpace4D>::new(&init_state);
     const STEP_COUNT: usize = 6;
 
     for _s_ind in 0..STEP_COUNT {
