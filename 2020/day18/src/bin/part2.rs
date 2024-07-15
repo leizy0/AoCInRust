@@ -5,7 +5,7 @@ use day18::{CLIArgs, Operator};
 
 fn main() {
     let args = CLIArgs::parse();
-    let ops_prec = HashMap::from([(Operator::Add, 1), (Operator::Mul, 1)]);
+    let ops_prec = HashMap::from([(Operator::Add, 2), (Operator::Mul, 1)]);
     let exps = day18::read_exps(&args.input_path, &ops_prec)
         .inspect_err(|e| {
             eprintln!(

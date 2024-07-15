@@ -101,7 +101,7 @@ struct AddExp {
 
 impl Display for AddExp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} + {}", self.left, self.right)
+        write!(f, "({} + {})", self.left, self.right)
     }
 }
 
@@ -125,7 +125,7 @@ struct MulExp {
 
 impl Display for MulExp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} * {}", self.left, self.right)
+        write!(f, "({} * {})", self.left, self.right)
     }
 }
 
@@ -148,7 +148,7 @@ struct ParenExp {
 
 impl Display for ParenExp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "({})", self.inner)
+        write!(f, "[{}]", self.inner)
     }
 }
 
@@ -255,8 +255,9 @@ fn parse_exp_recur(
                     cur_prec = ops_prec[&op];
                     if let Some(next_token) = tokens.peek() {
                         let right_exp = match next_token {
-                            Token::Num(_) => parse_exp_recur(tokens, ops_prec, cur_prec, in_paren)?,
-                            Token::LeftParen => parse_paren_exp(tokens, ops_prec)?,
+                            Token::Num(_) | Token::LeftParen => {
+                                parse_exp_recur(tokens, ops_prec, cur_prec, in_paren)?
+                            }
                             Token::RightParen => return Err(Error::NonMatchingRightParen),
                             Token::Op(_) => return Err(Error::TwoNeighborOp),
                         };
@@ -277,14 +278,15 @@ fn parse_exp_recur(
                 Token::Num(n) => {
                     tokens.pop();
                     cur_exp = Some(Box::new(NumExp::new(n)));
-                    if let Some(Token::Op(op)) = tokens.peek() {
-                        if ops_prec[&op] <= cur_prec {
-                            break;
-                        }
-                    }
                 }
                 Token::LeftParen => cur_exp = Some(parse_paren_exp(tokens, ops_prec)?),
                 other => return Err(Error::InvalidStartToken(other)),
+            }
+
+            if let Some(Token::Op(op)) = tokens.peek() {
+                if ops_prec[op] <= cur_prec {
+                    break;
+                }
             }
         }
     }
