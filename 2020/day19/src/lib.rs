@@ -1,9 +1,10 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, LinkedList},
     error,
     fmt::Display,
     fs::File,
     io::{self, BufRead, BufReader},
+    mem,
     path::{Path, PathBuf},
 };
 
@@ -49,8 +50,9 @@ pub struct CLIArgs {
     pub input_path: PathBuf,
 }
 
-pub trait MMRule {
-    fn check(&self, msg: &str, dict: &MMRules) -> Option<usize>;
+trait MMRule {
+    fn check(&self, msg: &str, dict: &MMRules, left_rules: &mut LinkedList<usize>)
+        -> Option<usize>;
 }
 
 struct LiteralRule {
@@ -74,7 +76,12 @@ impl TryFrom<&str> for LiteralRule {
 }
 
 impl MMRule for LiteralRule {
-    fn check(&self, msg: &str, _dict: &MMRules) -> Option<usize> {
+    fn check(
+        &self,
+        msg: &str,
+        _dict: &MMRules,
+        _left_rules: &mut LinkedList<usize>,
+    ) -> Option<usize> {
         if msg.starts_with(&self.literal) {
             Some(self.literal.len())
         } else {
@@ -104,14 +111,23 @@ impl TryFrom<&str> for ConcatRule {
 }
 
 impl MMRule for ConcatRule {
-    fn check(&self, msg: &str, dict: &MMRules) -> Option<usize> {
+    fn check(
+        &self,
+        msg: &str,
+        dict: &MMRules,
+        left_rules: &mut LinkedList<usize>,
+    ) -> Option<usize> {
         let mut cur_ind = 0;
-        for inner in &self.inners {
-            if let Some(ind) = dict
-                .get(*inner)
-                .and_then(|r| r.check(&msg[cur_ind..], dict))
+        self.inners
+            .iter()
+            .rev()
+            .for_each(|id| left_rules.push_front(*id));
+        while let Some(id) = left_rules.pop_front() {
+            if let Some(len) = dict
+                .get(id)
+                .and_then(|r| r.check(&msg[cur_ind..], dict, left_rules))
             {
-                cur_ind += ind;
+                cur_ind += len;
             } else {
                 return None;
             }
@@ -143,27 +159,40 @@ impl TryFrom<&str> for OrRule {
 }
 
 impl MMRule for OrRule {
-    fn check(&self, msg: &str, dict: &MMRules) -> Option<usize> {
-        self.inners
-            .iter()
-            .filter_map(|inner| inner.check(msg, dict))
-            .next()
+    fn check(
+        &self,
+        msg: &str,
+        dict: &MMRules,
+        left_rules: &mut LinkedList<usize>,
+    ) -> Option<usize> {
+        for inner in &self.inners {
+            let mut this_left_rules = left_rules.clone();
+            if let Some(len) = inner.check(msg, dict, &mut this_left_rules) {
+                if len >= msg.len() {
+                    debug_assert!(len == msg.len());
+                    mem::swap(left_rules, &mut this_left_rules);
+                    return Some(len);
+                }
+            }
+        }
+
+        None
     }
 }
 
-pub struct MMRules {
+struct MMRules {
     rules: HashMap<usize, Box<dyn MMRule>>,
 }
 
 impl MMRules {
-    pub fn get(&self, id: usize) -> Option<&dyn MMRule> {
-        self.rules.get(&id).map(|bm| bm.as_ref())
-    }
-
     fn new() -> Self {
         Self {
             rules: HashMap::new(),
         }
+    }
+
+    fn get(&self, id: usize) -> Option<&dyn MMRule> {
+        self.rules.get(&id).map(|bm| bm.as_ref())
     }
 
     fn add(&mut self, text: &str) -> Result<(), Error> {
@@ -184,7 +213,34 @@ impl MMRules {
     }
 }
 
-pub fn read_info<P: AsRef<Path>>(path: P) -> Result<(MMRules, Vec<String>), Error> {
+pub struct MMChecker {
+    rules: MMRules,
+    start_id: usize,
+}
+
+impl MMChecker {
+    fn new(rules: MMRules, start_id: usize) -> Self {
+        debug_assert!(
+            rules.get(start_id).is_some(),
+            "Can't find start rule in given rules."
+        );
+        Self { rules, start_id }
+    }
+
+    pub fn check(&self, msg: &str) -> bool {
+        let mut left_rules = LinkedList::new();
+        self.rules
+            .get(self.start_id)
+            .unwrap()
+            .check(msg, &self.rules, &mut left_rules)
+            .is_some_and(|len| len == msg.len())
+    }
+}
+
+pub fn read_info<P: AsRef<Path>>(
+    path: P,
+    start_rule_id: usize,
+) -> Result<(MMChecker, Vec<String>), Error> {
     let file = File::open(path).map_err(Error::IOError)?;
     let reader = BufReader::new(file);
     let mut lines = reader.lines();
@@ -198,12 +254,13 @@ pub fn read_info<P: AsRef<Path>>(path: P) -> Result<(MMRules, Vec<String>), Erro
 
         rules.add(s.as_str())?;
     }
+    let checker = MMChecker::new(rules, start_rule_id);
 
     let msgs = lines
         .map(|l| l.map_err(Error::IOError))
         .filter(|l| !l.as_ref().is_ok_and(|s| s.is_empty()))
         .collect::<Result<Vec<_>, Error>>()?;
-    Ok((rules, msgs))
+    Ok((checker, msgs))
 }
 
 fn parse_rule(text: &str) -> Result<Box<dyn MMRule>, Error> {
