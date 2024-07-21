@@ -23,6 +23,8 @@ pub enum Error {
     InvalidDirDiscriminant(u8),
     InconsistentTileSize,
     TilesAreNotSquare,
+    NoMaskPath,
+    InvalidMaskChar(char),
 }
 
 impl Display for Error {
@@ -44,6 +46,8 @@ impl Display for Error {
             ),
             Error::InconsistentTileSize => write!(f, "Given tiles have inconsistent size."),
             Error::TilesAreNotSquare => write!(f, "Given tiles are not square, expect squares which can keep size when flip and rotate."),
+            Error::NoMaskPath => write!(f, "No mask path found, expect a mask path to load image mask"),
+            Error::InvalidMaskChar(c) => write!(f, "Invalid character for image mask: {}", c),
         }
     }
 }
@@ -51,11 +55,12 @@ impl error::Error for Error {}
 
 #[derive(Debug, Parser)]
 pub struct CLIArgs {
-    pub input_path: PathBuf,
+    pub tiles_path: PathBuf,
+    pub mask_path: Option<PathBuf>,
 }
 
 #[repr(u8)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Pixel {
     Black = 0,
     White = 1,
@@ -74,7 +79,7 @@ impl TryFrom<char> for Pixel {
 }
 
 #[repr(u8)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Direction {
     Up = 0,
     Right = 1,
@@ -96,12 +101,10 @@ impl TryFrom<u8> for Direction {
     }
 }
 
-impl Direction {
-    pub fn rotate(&self, rot: Rotation) -> Direction {
-        Self::try_from((*self as u8 + rot as u8) % 4).unwrap()
-    }
+impl Neg for Direction {
+    type Output = Self;
 
-    pub fn rev(&self) -> Direction {
+    fn neg(self) -> Self::Output {
         match self {
             Direction::Up => Direction::Down,
             Direction::Right => Direction::Left,
@@ -109,7 +112,9 @@ impl Direction {
             Direction::Left => Direction::Right,
         }
     }
+}
 
+impl Direction {
     pub fn all_dirs() -> &'static [Direction] {
         static ALL_DIRECTIONS: [Direction; 4] = [
             Direction::Up,
@@ -155,6 +160,36 @@ impl Rotation {
 
         &ALL_ROTATIONS
     }
+
+    pub fn map_dir(&self, dir: Direction) -> Direction {
+        Direction::try_from((*self as u8 + dir as u8) % 4).unwrap()
+    }
+
+    pub fn map_size(&self, rows_n: usize, cols_n: usize) -> (usize, usize) {
+        match self {
+            Rotation::Clockwise0 | Rotation::Clockwise180 => (rows_n, cols_n),
+            Rotation::Clockwise90 | Rotation::Clockwise270 => (cols_n, rows_n),
+        }
+    }
+
+    pub fn map_pos(
+        &self,
+        r: usize,
+        c: usize,
+        rows_n: usize,
+        cols_n: usize,
+    ) -> Option<(usize, usize)> {
+        if r >= rows_n || c >= cols_n {
+            None
+        } else {
+            Some(match self {
+                Rotation::Clockwise0 => (r, c),
+                Rotation::Clockwise90 => (c, rows_n - 1 - r),
+                Rotation::Clockwise180 => (rows_n - 1 - r, cols_n - 1 - c),
+                Rotation::Clockwise270 => (cols_n - 1 - c, r),
+            })
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -165,6 +200,14 @@ enum Flip {
     Both,
 }
 
+impl Neg for Flip {
+    type Output = Self;
+
+    fn neg(self) -> Self::Output {
+        self
+    }
+}
+
 impl Flip {
     pub fn all_flips() -> &'static [Flip] {
         static ALL_FLIPS: [Flip; 4] = [Flip::NoFlip, Flip::UpDown, Flip::LeftRight, Flip::Both];
@@ -172,33 +215,46 @@ impl Flip {
         &ALL_FLIPS
     }
 
-    pub fn flip_dir(&self, dir: Direction) -> bool {
-        match self {
-            Flip::NoFlip => false,
-            Flip::UpDown => match dir {
-                Direction::Up | Direction::Down => true,
-                _ => false,
-            },
-            Flip::LeftRight => match dir {
-                Direction::Left | Direction::Right => true,
-                _ => false,
-            },
-            Flip::Both => true,
-        }
-    }
-
-    pub fn flip_order(&self) -> bool {
+    pub fn flip_border(&self) -> bool {
         match self {
             Flip::UpDown | Flip::LeftRight => true,
             _ => false,
         }
     }
+
+    pub fn map_pos(
+        &self,
+        r: usize,
+        c: usize,
+        rows_n: usize,
+        cols_n: usize,
+    ) -> Option<(usize, usize)> {
+        if r >= rows_n || c >= cols_n {
+            None
+        } else {
+            Some(match self {
+                Flip::NoFlip => (r, c),
+                Flip::UpDown => (rows_n - 1 - r, c),
+                Flip::LeftRight => (r, cols_n - 1 - c),
+                Flip::Both => (rows_n - 1 - r, cols_n - 1 - c),
+            })
+        }
+    }
+
+    pub fn map_dir(&self, dir: Direction) -> Direction {
+        match self {
+            Flip::UpDown if dir == Direction::Up || dir == Direction::Down => -dir,
+            Flip::LeftRight if dir == Direction::Left || dir == Direction::Right => -dir,
+            Flip::Both => -dir,
+            _ => dir,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
-struct Arrangement {
-    rotation: Rotation,
-    flip: Flip,
+pub struct Arrangement {
+    rotation: Rotation, // Apply firstly.
+    flip: Flip,         // Apply secondly.
 }
 
 impl Arrangement {
@@ -216,6 +272,37 @@ impl Arrangement {
         });
 
         &ALL_ARRANGEMENTS
+    }
+
+    pub fn map_size(&self, rows_n: usize, cols_n: usize) -> (usize, usize) {
+        self.rotation.map_size(rows_n, cols_n)
+    }
+
+    pub fn map_pos(
+        &self,
+        r: usize,
+        c: usize,
+        rows_n: usize,
+        cols_n: usize,
+    ) -> Option<(usize, usize)> {
+        self.rotation
+            .map_pos(r, c, rows_n, cols_n)
+            .and_then(|(rot_r, rot_c)| {
+                let (rot_rows_n, rot_cols_n) = self.rotation.map_size(rows_n, cols_n);
+                self.flip.map_pos(rot_r, rot_c, rot_rows_n, rot_cols_n)
+            })
+    }
+
+    fn rev_map_pos(
+        &self,
+        r: usize,
+        c: usize,
+        rows_n: usize,
+        cols_n: usize,
+    ) -> Option<(usize, usize)> {
+        (-self.flip)
+            .map_pos(r, c, rows_n, cols_n)
+            .and_then(|(flip_r, flip_c)| (-self.rotation).map_pos(flip_r, flip_c, rows_n, cols_n))
     }
 }
 
@@ -301,14 +388,14 @@ impl Tile {
         // Collect border pixels according to clockwise order.
         match dir {
             Direction::Up => (0..self.cols_n).filter_map(|c| self.pixel(0, c)).into(),
-            Direction::Left => (0..self.rows_n)
+            Direction::Right => (0..self.rows_n)
                 .filter_map(|r| self.pixel(r, self.cols_n - 1))
                 .into(),
             Direction::Down => (0..self.cols_n)
                 .rev()
                 .filter_map(|c| self.pixel(self.rows_n - 1, c))
                 .into(),
-            Direction::Right => (0..self.rows_n)
+            Direction::Left => (0..self.rows_n)
                 .rev()
                 .filter_map(|r| self.pixel(r, 0))
                 .into(),
@@ -339,13 +426,19 @@ impl Tile {
 struct ArrangedTile<'a> {
     tile: &'a Tile,
     arrg: Arrangement,
+    arrged_rows_n: usize,
+    arrged_cols_n: usize,
 }
 
 impl<'a> ArrangedTile<'a> {
     pub fn new(tile: &'a Tile, arrg: &Arrangement) -> Self {
+        let (org_rows_n, org_cols_n) = tile.size();
+        let (arrged_rows_n, arrged_cols_n) = arrg.map_size(org_rows_n, org_cols_n);
         Self {
             tile,
             arrg: arrg.clone(),
+            arrged_rows_n,
+            arrged_cols_n,
         }
     }
 
@@ -355,16 +448,20 @@ impl<'a> ArrangedTile<'a> {
 
     pub fn border(&self, mut dir: Direction) -> TileBorder {
         let flip = &self.arrg.flip;
-        if flip.flip_dir(dir) {
-            dir = dir.rev();
-        }
-
-        let border = self.tile.border(dir.rotate(-self.arrg.rotation));
-        if flip.flip_order() {
+        // Reverse map direction.
+        dir = (-self.arrg.rotation).map_dir((-*flip).map_dir(dir));
+        let border = self.tile.border(dir);
+        if flip.flip_border() {
             border.flip()
         } else {
             border
         }
+    }
+
+    pub fn pixel(&self, r: usize, c: usize) -> Option<&'a Pixel> {
+        self.arrg
+            .rev_map_pos(r, c, self.arrged_rows_n, self.arrged_cols_n)
+            .and_then(|(rev_r, rev_c)| self.tile.pixel(rev_r, rev_c))
     }
 }
 
@@ -450,6 +547,10 @@ pub struct SatelliteImage {
     img_tiles: Vec<ImageTile>,
     img_tile_rows_n: usize,
     img_tile_cols_n: usize,
+    tile_pixel_rows_n: usize,
+    tile_pixel_cols_n: usize,
+    pixel_rows_n: usize,
+    pixel_cols_n: usize,
 }
 
 impl TryFrom<Vec<Tile>> for SatelliteImage {
@@ -547,11 +648,26 @@ impl TryFrom<Vec<Tile>> for SatelliteImage {
 
         let img_tile_rows_n = row_ind;
         let img_tile_cols_n = img_tile_cols_n.unwrap_or(0);
+        let (tile_pixel_rows_n, tile_pixel_cols_n) = value
+            .get(0)
+            .map(|t| t.size())
+            .and_then(|(r, c)| {
+                r.checked_sub(2)
+                    .and_then(|pr| c.checked_sub(2).map(|pc| (pr, pc)))
+            })
+            .unwrap_or((0, 0));
+        let pixel_rows_n = img_tile_rows_n * tile_pixel_rows_n;
+        let pixel_cols_n = img_tile_cols_n * tile_pixel_cols_n;
+
         Ok(Self {
             tiles: value.into_iter().map(|t| (t.id, t)).collect(),
             img_tiles,
             img_tile_rows_n,
             img_tile_cols_n,
+            tile_pixel_rows_n,
+            tile_pixel_cols_n,
+            pixel_rows_n,
+            pixel_cols_n,
         })
     }
 }
@@ -566,6 +682,123 @@ impl SatelliteImage {
             None
         } else {
             self.img_tiles.get(r * self.img_tile_cols_n + c)
+        }
+    }
+
+    pub fn pixel_size(&self) -> (usize, usize) {
+        (self.pixel_rows_n, self.pixel_cols_n)
+    }
+
+    pub fn pixel(&self, r: usize, c: usize) -> Option<&Pixel> {
+        let img_tile_r_ind = r / self.tile_pixel_rows_n;
+        let img_tile_c_ind = c / self.tile_pixel_cols_n;
+        let tile_pixel_r_ind = r % self.tile_pixel_rows_n + 1; // +1 for skipping the border
+        let tile_pixel_c_ind = c % self.tile_pixel_cols_n + 1; // +1 for skipping the border
+        self.img_tiles
+            .get(img_tile_r_ind * self.img_tile_cols_n + img_tile_c_ind)
+            .and_then(|img_t| {
+                self.tiles.get(&img_t.id).and_then(|t| {
+                    ArrangedTile::new(t, &img_t.arrg).pixel(tile_pixel_r_ind, tile_pixel_c_ind)
+                })
+            })
+    }
+}
+
+pub struct ImageMask {
+    masked_pixels_pos: Vec<(usize, usize)>,
+    rows_n: usize,
+    cols_n: usize,
+}
+
+impl ImageMask {
+    pub fn size(&self) -> (usize, usize) {
+        (self.rows_n, self.cols_n)
+    }
+}
+
+pub struct ArrangedImageMask {
+    masked_pixels_pos: Vec<(usize, usize)>,
+    rows_n: usize,
+    cols_n: usize,
+}
+
+impl ArrangedImageMask {
+    pub fn new(mask: &ImageMask, arrg: &Arrangement) -> Self {
+        let (org_rows_n, org_cols_n) = mask.size();
+        let (rows_n, cols_n) = arrg.map_size(org_rows_n, org_cols_n);
+        let masked_pixels_pos = mask
+            .masked_pixels_pos
+            .iter()
+            .map(|(r, c)| arrg.map_pos(*r, *c, org_rows_n, org_cols_n).unwrap())
+            .collect::<Vec<_>>();
+        Self {
+            masked_pixels_pos,
+            rows_n,
+            cols_n,
+        }
+    }
+
+    pub fn masked_pixels_pos(&self, image: &SatelliteImage) -> HashSet<(usize, usize)> {
+        let mut masked_pos = HashSet::new();
+        let (pixel_rows_n, pixel_cols_n) = image.pixel_size();
+        for mask_r in 0..=(pixel_rows_n - self.rows_n) {
+            for mask_c in 0..=(pixel_cols_n - self.cols_n) {
+                if self.masked_pixels_pos.iter().all(|(r, c)| {
+                    image
+                        .pixel(*r + mask_r, *c + mask_c)
+                        .is_some_and(|p| *p == Pixel::White)
+                }) {
+                    masked_pos.extend(
+                        self.masked_pixels_pos
+                            .iter()
+                            .map(|(r, c)| (*r + mask_r, *c + mask_c)),
+                    );
+                }
+            }
+        }
+
+        masked_pos
+    }
+}
+
+struct ImageMaskBuilder {
+    white_pixels_pos: Vec<(usize, usize)>,
+    rows_n: usize,
+    cols_n: Option<usize>,
+}
+
+impl ImageMaskBuilder {
+    pub fn new() -> Self {
+        Self {
+            white_pixels_pos: Vec::new(),
+            rows_n: 0,
+            cols_n: None,
+        }
+    }
+
+    pub fn add_row(&mut self, text: &str) -> Result<(), Error> {
+        let this_cols_n = text.chars().count();
+        if *self.cols_n.get_or_insert(this_cols_n) != this_cols_n {
+            return Err(Error::InconsistentColNum(this_cols_n, self.cols_n.unwrap()));
+        }
+
+        for (c_ind, c) in text.chars().enumerate() {
+            match c {
+                '#' => self.white_pixels_pos.push((self.rows_n, c_ind)),
+                ' ' => (),
+                other => return Err(Error::InvalidMaskChar(other)),
+            }
+        }
+        self.rows_n += 1;
+
+        Ok(())
+    }
+
+    pub fn build(self) -> ImageMask {
+        ImageMask {
+            masked_pixels_pos: self.white_pixels_pos,
+            rows_n: self.rows_n,
+            cols_n: self.cols_n.unwrap_or(0),
         }
     }
 }
@@ -601,4 +834,18 @@ pub fn read_tiles<P: AsRef<Path>>(path: P) -> Result<Vec<Tile>> {
     }
 
     Ok(tiles)
+}
+
+pub fn read_mask<P: AsRef<Path>>(path: P) -> Result<ImageMask> {
+    let file = File::open(path)?;
+    let reader = BufReader::new(file);
+    let mut builder = ImageMaskBuilder::new();
+    for l in reader.lines() {
+        let s = l.context("Can't read rows of image mask.")?;
+        builder
+            .add_row(s.as_str())
+            .context("Failed to read a row of the mask.")?;
+    }
+
+    Ok(builder.build())
 }

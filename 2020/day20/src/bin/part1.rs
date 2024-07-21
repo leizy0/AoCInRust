@@ -4,10 +4,10 @@ use day20::{CLIArgs, SatelliteImage};
 
 fn main() -> Result<()> {
     let args = CLIArgs::parse();
-    let tiles = day20::read_tiles(&args.input_path).with_context(|| {
+    let tiles = day20::read_tiles(&args.tiles_path).with_context(|| {
         format!(
             "Failed to read tiles from given input file({}).",
-            args.input_path.display()
+            args.tiles_path.display()
         )
     })?;
 
