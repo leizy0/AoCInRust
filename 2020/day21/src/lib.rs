@@ -58,6 +58,14 @@ impl FoodList {
     pub fn iter(&self) -> FoodIdIter {
         FoodIdIter::new(&self)
     }
+
+    pub fn ingrd_name(&self, id: usize) -> Option<&str> {
+        self.ingrd_names.get(id).map(|s| s.as_str())
+    }
+
+    pub fn allrg_name(&self, id: usize) -> Option<&str> {
+        self.allrg_names.get(id).map(|s| s.as_str())
+    }
 }
 
 pub struct FoodIdIter<'a> {
@@ -103,7 +111,7 @@ impl FoodListBuilder {
         static FOOD_PATTERN: Lazy<Regex> = Lazy::new(|| {
             Regex::new(r"(?<ingrd_names>(?:\w+)(?:\s+\w+)*)\s+\(contains\s+(?<allrg_names>(?:\w+)(?:,\s+\w+)*)\)").unwrap()
         });
-        fn map_to_ids_with_dict<'a>(
+        fn to_ids_with_map<'a>(
             names: impl Iterator<Item = &'a str>,
             dict: &mut HashMap<String, usize>,
         ) -> HashSet<usize> {
@@ -122,11 +130,11 @@ impl FoodListBuilder {
 
         if let Some(caps) = FOOD_PATTERN.captures(text) {
             let info = Food {
-                ingrd_ids: map_to_ids_with_dict(
+                ingrd_ids: to_ids_with_map(
                     caps["ingrd_names"].split_whitespace(),
                     &mut self.ingrd_names_map,
                 ),
-                allrg_ids: map_to_ids_with_dict(
+                allrg_ids: to_ids_with_map(
                     caps["allrg_names"].split(',').map(|s| s.trim()),
                     &mut self.allrg_names_map,
                 ),
@@ -140,7 +148,7 @@ impl FoodListBuilder {
     }
 
     pub fn build(self) -> FoodList {
-        fn dict_to_names(dict: HashMap<String, usize>) -> Vec<String> {
+        fn map_to_names(dict: HashMap<String, usize>) -> Vec<String> {
             let mut names = vec![String::new(); dict.len()];
             for (name, id) in dict {
                 names[id] = name;
@@ -150,8 +158,8 @@ impl FoodListBuilder {
         }
 
         FoodList {
-            ingrd_names: dict_to_names(self.ingrd_names_map),
-            allrg_names: dict_to_names(self.allrg_names_map),
+            ingrd_names: map_to_names(self.ingrd_names_map),
+            allrg_names: map_to_names(self.allrg_names_map),
             foods: self.foods,
         }
     }
@@ -232,7 +240,7 @@ pub fn find_ingrd_allg_map(foods: &FoodList) -> HashMap<usize, usize> {
                         });
                         has_changed = true;
                     } else {
-                        // m to n map, m >= n.
+                        // m to n map, m > n.
                         assert!(ingrd_intersec_n >= allrg_intersec_n);
                         let new_info = Food {
                             ingrd_ids: ingrd_intersec,
