@@ -11,7 +11,7 @@ fn main() -> Result<()> {
         )
     })?;
 
-    let ingrd_allrg_map = day21::find_ingrd_allg_map(&foods);
+    let ingrd_allrg_map = day21::find_ingrd_allrg_map(&foods);
     let mut mapped_names = ingrd_allrg_map
         .iter()
         .map(|(ingrd_id, allrg_id)| {
