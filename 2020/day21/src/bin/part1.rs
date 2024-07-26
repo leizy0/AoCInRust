@@ -11,7 +11,7 @@ fn main() -> Result<()> {
         )
     })?;
 
-    let ingrd_allrg_map = day21::find_ingrd_allg_map(&foods);
+    let ingrd_allrg_map = day21::find_ingrd_allrg_map(&foods);
     let uncertain_ingrd_appr_count = foods
         .iter()
         .map(|food| {

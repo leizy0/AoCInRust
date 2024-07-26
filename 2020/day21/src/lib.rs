@@ -186,7 +186,7 @@ pub fn read_foods<P: AsRef<Path> + Copy>(path: P) -> Result<FoodList> {
     Ok(builder.build())
 }
 
-pub fn find_ingrd_allg_map(foods: &FoodList) -> HashMap<usize, usize> {
+pub fn find_ingrd_allrg_map(foods: &FoodList) -> HashMap<usize, usize> {
     let mut map = HashMap::new();
     let mut infos = foods.foods.iter().cloned().collect::<VecDeque<_>>();
     let mut unchange_acc_count = 0;
@@ -197,10 +197,12 @@ pub fn find_ingrd_allg_map(foods: &FoodList) -> HashMap<usize, usize> {
             }
         }
 
+        let mut has_progress = false;
         if info.ingrd_ids.len() == 1 && info.allrg_ids.len() == 1 {
             // One to one map.
             map.entry(info.ingrd_ids.iter().copied().next().unwrap())
                 .or_insert_with(|| info.ingrd_ids.iter().copied().next().unwrap());
+            has_progress = true;
         } else if !info.allrg_ids.is_empty() {
             let cur_info_len = infos.len();
             if unchange_acc_count >= cur_info_len {
@@ -208,7 +210,6 @@ pub fn find_ingrd_allg_map(foods: &FoodList) -> HashMap<usize, usize> {
                 break;
             }
 
-            let mut has_changed = false;
             for other_ind in 0..cur_info_len {
                 let allrg_intersec = info
                     .allrg_ids
@@ -238,18 +239,18 @@ pub fn find_ingrd_allg_map(foods: &FoodList) -> HashMap<usize, usize> {
                         allrg_intersec.iter().for_each(|allrg_id| {
                             info.allrg_ids.remove(allrg_id);
                         });
-                        has_changed = true;
-                    } else {
-                        // m to n map, m > n.
-                        assert!(ingrd_intersec_n >= allrg_intersec_n);
-                        let new_info = Food {
-                            ingrd_ids: ingrd_intersec,
-                            allrg_ids: allrg_intersec,
-                        };
-                        if new_info != info && new_info != infos[other_ind] {
-                            infos.push_back(new_info);
-                            has_changed = true;
-                        }
+                        has_progress = true;
+                    }
+
+                    // m to n map, m >= n.
+                    assert!(ingrd_intersec_n >= allrg_intersec_n);
+                    let new_info = Food {
+                        ingrd_ids: ingrd_intersec,
+                        allrg_ids: allrg_intersec,
+                    };
+                    if new_info != info && new_info != infos[other_ind] {
+                        infos.push_back(new_info);
+                        has_progress = true;
                     }
                 }
             }
@@ -257,13 +258,19 @@ pub fn find_ingrd_allg_map(foods: &FoodList) -> HashMap<usize, usize> {
             if !info.allrg_ids.is_empty() {
                 // Has allergy information left.
                 infos.push_back(info);
-            }
-
-            if has_changed {
-                unchange_acc_count = 0;
             } else {
-                unchange_acc_count += 1;
+                // Discard the current info.
+                has_progress = true;
             }
+        } else {
+            // Discard the current info.
+            has_progress = true;
+        }
+
+        if has_progress {
+            unchange_acc_count = 0;
+        } else {
+            unchange_acc_count += 1;
         }
     }
 
