@@ -20,14 +20,14 @@ fn main() -> Result<()> {
         const PLAYER_INDS: [usize; 2] = [0, 1];
         let player_ids = [players[PLAYER_INDS[0]].id(), players[PLAYER_INDS[1]].id()];
         println!(
-            "Combat! Player {} VS Player {}:",
+            "Combat(Recursive)! Player {} VS Player {}:",
             player_ids[0], player_ids[1]
         );
         let CombatRes {
             turns_n,
             winner,
             winner_cards,
-        } = day22::combat1(&players[PLAYER_INDS[0]], &players[PLAYER_INDS[1]]).with_context(
+        } = day22::combat2(&players[PLAYER_INDS[0]], &players[PLAYER_INDS[1]]).with_context(
             || {
                 format!(
                     "Failed to simulate combat between player {} and {}.",
@@ -42,7 +42,7 @@ fn main() -> Result<()> {
             .map(|(ind, c)| c * (winner_cards_n - ind))
             .sum::<usize>();
         println!(
-            "After {} turn(s), the combat is over. Player {} wins, and get score {}.",
+            "After {} turn(s), the combat(recursive) is over. Player {} wins, and get score {}.",
             turns_n, player_ids[winner], winner_score
         );
     }

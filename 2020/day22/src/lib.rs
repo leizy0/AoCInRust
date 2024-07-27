@@ -1,5 +1,5 @@
 use std::{
-    collections::VecDeque,
+    collections::{HashSet, VecDeque},
     error,
     fmt::Display,
     fs::File,
@@ -127,7 +127,7 @@ pub fn read_players<P: AsRef<Path>>(path: P) -> Result<Vec<Player>> {
     Ok(players)
 }
 
-pub fn combat(player0: &Player, player1: &Player) -> Result<CombatRes, Error> {
+pub fn combat1(player0: &Player, player1: &Player) -> Result<CombatRes, Error> {
     let mut player0_cards = player0.cards.iter().copied().collect::<VecDeque<_>>();
     let mut player1_cards = player1.cards.iter().copied().collect::<VecDeque<_>>();
     let mut turns_n = 0;
@@ -142,6 +142,83 @@ pub fn combat(player0: &Player, player1: &Player) -> Result<CombatRes, Error> {
             player1_cards.push_back(card0);
         } else {
             return Err(Error::FoundSameCard(card0));
+        }
+
+        turns_n += 1;
+    }
+
+    let (winner, winner_cards) = if player0_cards.is_empty() {
+        (1, player1_cards)
+    } else {
+        (0, player0_cards)
+    };
+
+    Ok(CombatRes {
+        turns_n,
+        winner,
+        winner_cards,
+    })
+}
+
+pub fn combat2(player0: &Player, player1: &Player) -> Result<CombatRes, Error> {
+    combat2_recur(
+        player0.cards.iter(),
+        player0.cards.len(),
+        player1.cards.iter(),
+        player1.cards.len(),
+    )
+}
+
+fn combat2_recur<'a, I: Iterator<Item = &'a usize>>(
+    cards0: I,
+    cards0_n: usize,
+    cards1: I,
+    cards1_n: usize,
+) -> Result<CombatRes, Error> {
+    let mut player0_cards = cards0.take(cards0_n).copied().collect::<VecDeque<_>>();
+    let mut player1_cards = cards1.take(cards1_n).copied().collect::<VecDeque<_>>();
+    let mut turns_n = 0;
+    let mut decks_set = HashSet::new();
+    while !player0_cards.is_empty() && !player1_cards.is_empty() {
+        if !decks_set.insert((player0_cards.clone(), player1_cards.clone())) {
+            // Run into the infinite loop, player0 wins.
+            return Ok(CombatRes {
+                turns_n,
+                winner: 0,
+                winner_cards: player0_cards,
+            });
+        }
+
+        let card0 = player0_cards.pop_front().unwrap();
+        let card1 = player1_cards.pop_front().unwrap();
+        let round_winner = if card0 <= player0_cards.len() && card1 <= player1_cards.len() {
+            // Recursive game.
+            let CombatRes {
+                turns_n: recur_turns_n,
+                winner,
+                ..
+            } = combat2_recur(player0_cards.iter(), card0, player1_cards.iter(), card1)?;
+            turns_n += recur_turns_n;
+            winner
+        } else {
+            // Normal game.
+            if card0 > card1 {
+                0
+            } else if card1 > card0 {
+                1
+            } else {
+                return Err(Error::FoundSameCard(card0));
+            }
+        };
+
+        if round_winner == 0 {
+            // Player 0 wins this round.
+            player0_cards.push_back(card0);
+            player0_cards.push_back(card1);
+        } else {
+            // Player 1 wins this round.
+            player1_cards.push_back(card1);
+            player1_cards.push_back(card0);
         }
 
         turns_n += 1;
