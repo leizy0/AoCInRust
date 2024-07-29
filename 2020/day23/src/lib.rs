@@ -1,11 +1,12 @@
-use std::{collections::HashSet, error, fmt::Display};
+use std::{collections::HashSet, error, fmt::Display, ops::RangeInclusive};
 
-use anyhow::Context;
+use anyhow::{Context, Result};
 use clap::Parser;
 
 #[derive(Debug)]
 pub enum Error {
-    InvalidCupSeqText(String),
+    EmptyCupSeq,
+    InvalidCupId(usize, RangeInclusive<usize>),
     InvalidCupChar(char),
     RepeatCupID(usize),
 }
@@ -13,9 +14,8 @@ pub enum Error {
 impl Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::InvalidCupSeqText(s) => {
-                write!(f, "Invalid string for cup sequence({}), expect digits", s)
-            }
+            Error::EmptyCupSeq => write!(f, "Given empty initial sequence to start the cup game"),
+            Error::InvalidCupId(id, range) => write!(f, "Found invalid id {} for cup, expect id in {:?}", id, range),
             Error::InvalidCupChar(c) => write!(f, "Invalid character for cup: {}", c),
             Error::RepeatCupID(id) => write!(f, "Found repeat cup id: {}", id),
         }
@@ -32,39 +32,29 @@ pub struct CLIArgs {
 pub struct CupGame {
     next_ids: Vec<usize>,
     cur_cup: usize,
-    cup_n: usize,
+    cups_n: usize,
 }
 
-impl TryFrom<&str> for CupGame {
-    type Error = anyhow::Error;
-
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-        let cup_n = value.chars().count();
-        if cup_n >= 10 || cup_n == 0 {
-            return Err(Error::InvalidCupSeqText(value.to_string())).with_context(|| {
-                format!(
-                    "Game building from string only supports at most 9 digits, given {}.",
-                    cup_n
-                )
-            });
+impl CupGame {
+    pub fn try_from_seq(cups_n: usize, init_seq: impl Iterator<Item = usize>) -> Result<Self> {
+        if cups_n == 0 {
+            return Err(Error::EmptyCupSeq.into());
         }
 
-        let mut next_ids = vec![0; cup_n + 1]; // Reserve element at 0.
+        let cup_range = 1..=cups_n;
+        let mut next_ids = vec![0; cups_n + 1]; // Reserve the element at 0.
         let mut cup_seen = HashSet::new();
         let mut start_cup = None;
         let mut last_cup = None;
-        for (ind, c) in value.chars().enumerate() {
-            let cup = c
-                .to_digit(10)
-                .map(|n| n as usize)
-                .filter(|n| *n > 0 && *n <= cup_n)
-                .ok_or(Error::InvalidCupChar(c))
-                .with_context(|| format!("Failed to build cup game at index {}.", ind))?;
-            start_cup.get_or_insert(cup);
+        for (ind, cup) in init_seq.enumerate() {
+            if !cup_range.contains(&cup) {
+                return Err(Error::InvalidCupId(cup, cup_range).into());
+            }
             if !cup_seen.insert(cup) {
                 return Err(Error::RepeatCupID(cup))
                     .with_context(|| format!("Failed to build cup game at index {}.", ind));
             }
+            start_cup.get_or_insert(cup);
 
             if let Some(last_cup) = last_cup.take() {
                 next_ids[last_cup] = cup;
@@ -77,14 +67,12 @@ impl TryFrom<&str> for CupGame {
         Ok(CupGame {
             next_ids,
             cur_cup: start_cup,
-            cup_n,
+            cups_n,
         })
     }
-}
 
-impl CupGame {
-    pub fn cup_n(&self) -> usize {
-        self.cup_n
+    pub fn cups_n(&self) -> usize {
+        self.cups_n
     }
 
     pub fn next(&self, id: usize) -> Option<usize> {
@@ -93,12 +81,12 @@ impl CupGame {
 
     pub fn one_move(&mut self) {
         const MOVE_COUNT: usize = 3;
-        assert!(self.cup_n >= MOVE_COUNT + 2);
+        assert!(self.cups_n >= MOVE_COUNT + 2);
 
         let mut dest_cup = self.cur_cup;
         loop {
             // Find the destination cup, current cup - 1 and wrap to the highest cup if the result is below the lowest one.
-            dest_cup = (dest_cup + self.cup_n - 2) % self.cup_n + 1;
+            dest_cup = (dest_cup + self.cups_n - 2) % self.cups_n + 1;
             let mut move_cup = self.cur_cup;
             let mut is_dest_ok = true;
             let mut move_front = None;
