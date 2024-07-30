@@ -15,9 +15,13 @@ fn main() -> Result<()> {
     for pos in &poss {
         floor.flip_pos(pos);
     }
+    const FLIP_COUNT: usize = 100;
+    for _ in 0..FLIP_COUNT {
+        floor.flip();
+    }
     println!(
-        "After flipped, the count of tiles from {} given paths which flips to black is {}.",
-        poss.len(),
+        "After flipped {} times, the count of black tiles on the floor is {}.",
+        FLIP_COUNT,
         floor.black_n()
     );
 
