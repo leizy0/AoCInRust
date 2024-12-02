@@ -1,4 +1,10 @@
-use std::{error, fmt::Display, fs::File, io::{BufRead, BufReader}, path::{Path, PathBuf}};
+use std::{
+    error,
+    fmt::Display,
+    fs::File,
+    io::{BufRead, BufReader},
+    path::{Path, PathBuf},
+};
 
 use anyhow::{Context, Error};
 use clap::Parser;
@@ -13,7 +19,11 @@ impl Display for Day1Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Day1Error::InvalidChar(c) => write!(f, "Invalid character({}) in location ID list.", c),
-            Day1Error::NoneDigits(s, start_ind) => write!(f, "Given string({}) start from {}th character doesn't have any digits.", s, start_ind),
+            Day1Error::NoneDigits(s, start_ind) => write!(
+                f,
+                "Given string({}) start from {}th character doesn't have any digits.",
+                s, start_ind
+            ),
         }
     }
 }
@@ -26,14 +36,23 @@ pub struct CLIArgs {
 }
 
 pub fn read_lists<P: AsRef<Path>>(path: P) -> Result<(Vec<usize>, Vec<usize>), Error> {
-    let file = File::open(&path).with_context(|| { format!("Failed to open given file({})", path.as_ref().display()) })?;
+    let file = File::open(&path)
+        .with_context(|| format!("Failed to open given file({})", path.as_ref().display()))?;
     let reader = BufReader::new(file);
     let mut list0 = Vec::new();
     let mut list1 = Vec::new();
     for (ind, line) in reader.lines().enumerate() {
-        let s = line.with_context(|| { format!("Failed to read line #{} of given file({}).", ind + 1, path.as_ref().display())})?;
-        let (id0, id0_len) = read_num(&s, 0).with_context(|| { format!("Failed to read the first location ID in string({}).", s)})?;
-        let (id1, _) = read_num(&s, id0_len).with_context(|| { format!("Failed to read the second location ID in string({}).", s)})?;
+        let s = line.with_context(|| {
+            format!(
+                "Failed to read line #{} of given file({}).",
+                ind + 1,
+                path.as_ref().display()
+            )
+        })?;
+        let (id0, id0_len) = read_num(&s, 0)
+            .with_context(|| format!("Failed to read the first location ID in string({}).", s))?;
+        let (id1, _) = read_num(&s, id0_len)
+            .with_context(|| format!("Failed to read the second location ID in string({}).", s))?;
         list0.push(id0);
         list1.push(id1);
     }
@@ -57,5 +76,6 @@ fn read_num(s: &str, start_ind: usize) -> Result<(usize, usize), Day1Error> {
         len += 1;
     }
 
-    n_op.ok_or(Day1Error::NoneDigits(s.to_string(), start_ind)).map(|n| (n, len))
+    n_op.ok_or(Day1Error::NoneDigits(s.to_string(), start_ind))
+        .map(|n| (n, len))
 }
