@@ -12,8 +12,11 @@ fn main() -> Result<()> {
 
     let sum = insts
         .iter()
-        .map(|i| i.mul_sum())
-        .sum::<usize>();
+        .fold((0, true), |(sum, do_mul), i| {
+            let (cur_sum, cur_do_mul) = i.mul_sum_enable(true, do_mul);
+            (sum + cur_sum, cur_do_mul)
+        })
+        .0;
     println!("The total sum of correct multiply instructions is {}.", sum);
 
     Ok(())
