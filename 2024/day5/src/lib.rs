@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     error,
     fmt::Display,
     fs::File,
@@ -32,7 +32,7 @@ pub struct CLIArgs {
 
 #[derive(Debug)]
 pub struct PrinterRules {
-    rules: HashMap<usize, HashSet<usize>>,
+    rules: HashMap<usize, Vec<usize>>,
 }
 
 impl PrinterRules {
@@ -54,8 +54,8 @@ impl PrinterRules {
             .map_err(|_| Error::InvalidRuleText(rule_text.to_string()))?;
         self.rules
             .entry(left_n)
-            .or_insert_with(|| HashSet::new())
-            .insert(right_n);
+            .or_insert_with(|| Vec::new())
+            .push(right_n);
 
         Ok(())
     }
@@ -63,14 +63,38 @@ impl PrinterRules {
     pub fn is_valid(&self, update: &[usize]) -> bool {
         let page_n = update.len();
         for ind in (0..page_n).rev() {
-            if let Some(after_set) = self.rules.get(&update[ind]) {
-                if update[..ind].iter().any(|n| after_set.contains(n)) {
+            if let Some(after_pages_n) = self.rules.get(&update[ind]) {
+                if update[..ind].iter().any(|n| after_pages_n.contains(n)) {
                     return false;
                 }
             }
         }
 
         true
+    }
+
+    pub fn correct(&self, update: &[usize]) -> Vec<usize> {
+        let mut corrected = Vec::from(update);
+        let page_n = corrected.len();
+        for ind in (0..page_n).rev() {
+            while let Some(after_pages_n) = self.rules.get(&corrected[ind]) {
+                let mut swap_ind = None;
+                for (check_ind, n) in corrected[..ind].iter().enumerate() {
+                    if after_pages_n.contains(n) {
+                        swap_ind = Some(check_ind);
+                        break;
+                    }
+                }
+
+                if let Some(swap_ind) = swap_ind {
+                    corrected.swap(swap_ind, ind);
+                } else {
+                    break;
+                }
+            }
+        }
+
+        corrected
     }
 }
 
