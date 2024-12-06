@@ -11,10 +11,10 @@ fn main() -> Result<()> {
         )
     })?;
 
-    let patrol_n = lab.sim_patrol();
+    let patrol_n = lab.patrol_positions();
     println!(
         "The guard will visit {} position(s) before leaving given laboratory.",
-        patrol_n
+        patrol_n.len()
     );
 
     Ok(())

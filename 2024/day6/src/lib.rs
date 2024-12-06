@@ -11,11 +11,12 @@ use anyhow::{Context, Result};
 use clap::Parser;
 
 #[derive(Debug)]
-enum Error {
+pub enum Error {
     InconsistentRow(usize, usize),
     MultipleGuards(Guard, Guard),
     InvalidChar(char),
     NoGuard,
+    InvalidDirChar(char),
 }
 
 impl Display for Error {
@@ -35,6 +36,7 @@ impl Display for Error {
                 write!(f, "Invalid character({}) in text of laboratory layout.", c)
             }
             Error::NoGuard => write!(f, "There's no guard in given laboratory, but expect one."),
+            Error::InvalidDirChar(c) => write!(f, "Invalid character({}) for direction.", c),
         }
     }
 }
@@ -46,12 +48,26 @@ pub struct CLIArgs {
     pub input_path: PathBuf,
 }
 
-#[derive(Debug, Clone, Copy)]
-enum Direction {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Direction {
     Up,
     Right,
     Down,
     Left,
+}
+
+impl TryFrom<char> for Direction {
+    type Error = Error;
+
+    fn try_from(value: char) -> std::result::Result<Self, Self::Error> {
+        match value {
+            '^' => Ok(Direction::Up),
+            '>' => Ok(Direction::Right),
+            'v' => Ok(Direction::Down),
+            '<' => Ok(Direction::Left),
+            other => Err(Error::InvalidDirChar(other)),
+        }
+    }
 }
 
 impl Display for Direction {
@@ -66,7 +82,7 @@ impl Display for Direction {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-struct Position {
+pub struct Position {
     r: usize,
     c: usize,
 }
@@ -93,8 +109,8 @@ impl Position {
     }
 }
 
-#[derive(Debug, Clone)]
-struct Guard {
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Guard {
     pos: Position,
     dir: Direction,
 }
@@ -148,38 +164,74 @@ pub struct Laboratory {
 }
 
 impl Laboratory {
-    pub fn sim_patrol(&self) -> usize {
-        let mut cur_guard = self.guard.clone();
-        let mut moved_tiles = HashSet::new();
-        while self.is_inside(cur_guard.pos()) {
-            moved_tiles.insert(cur_guard.pos().clone());
-            if let Some(next_pos) = cur_guard.ahead_pos() {
-                if self
-                    .is_occupied(&next_pos)
-                    .is_some_and(|is_occupied| *is_occupied)
-                {
-                    cur_guard.turn_right();
+    pub fn patrol_positions(&self) -> HashSet<Position> {
+        let mut guard = self.guard.clone();
+        let mut moved_positions = HashSet::new();
+        while self.is_inside(guard.pos()) {
+            moved_positions.insert(guard.pos().clone());
+            if let Some(next_pos) = guard.ahead_pos() {
+                if self.tile(&next_pos).is_some_and(|is_occupied| *is_occupied) {
+                    guard.turn_right();
                     continue;
                 }
 
-                cur_guard.go_ahead();
+                if !guard.go_ahead() {
+                    break;
+                }
             } else {
                 break;
             }
         }
 
-        moved_tiles.len()
+        moved_positions
+    }
+
+    pub fn is_loop_if_patrol(&self) -> bool {
+        let mut guard = self.guard.clone();
+        let mut turn_states = HashSet::new();
+        while self.is_inside(guard.pos()) {
+            if let Some(next_pos) = guard.ahead_pos() {
+                if self.tile(&next_pos).is_some_and(|is_occupied| *is_occupied) {
+                    if !turn_states.insert(guard.clone()) {
+                        return true;
+                    }
+
+                    guard.turn_right();
+                    continue;
+                }
+
+                if !guard.go_ahead() {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+
+        false
+    }
+
+    pub fn guard(&self) -> &Guard {
+        &self.guard
+    }
+
+    pub fn tile(&self, pos: &Position) -> Option<&bool> {
+        self.pos_to_ind(pos).and_then(|ind| self.tiles.get(ind))
+    }
+
+    pub fn tile_mut(&mut self, pos: &Position) -> Option<&mut bool> {
+        self.pos_to_ind(pos).and_then(|ind| self.tiles.get_mut(ind))
     }
 
     fn is_inside(&self, pos: &Position) -> bool {
         pos.r < self.row_n && pos.c < self.col_n
     }
 
-    fn is_occupied(&self, pos: &Position) -> Option<&bool> {
-        if pos.r >= self.row_n || pos.c >= self.col_n {
+    fn pos_to_ind(&self, pos: &Position) -> Option<usize> {
+        if !self.is_inside(pos) {
             None
         } else {
-            self.tiles.get(pos.r * self.col_n + pos.c)
+            Some(pos.r * self.col_n + pos.c)
         }
     }
 }
@@ -211,8 +263,9 @@ impl LaboratoryBuilder {
             match c {
                 '.' => self.tiles.push(false),
                 '#' => self.tiles.push(true),
-                '^' => {
-                    let guard = Guard::new(&Position::new(self.row_n, ind), Direction::Up);
+                dir_c @ ('^' | 'v' | '<' | '>') => {
+                    let guard =
+                        Guard::new(&Position::new(self.row_n, ind), Direction::try_from(dir_c)?);
                     if self.guard.is_some() {
                         return Err(Error::MultipleGuards(self.guard.take().unwrap(), guard));
                     }
