@@ -36,6 +36,13 @@ pub struct CLIArgs {
     pub input_path: PathBuf,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum Operator {
+    Plus,
+    Multiply,
+    Concatenation,
+}
+
 #[derive(Debug)]
 pub struct Equation {
     result: usize,
@@ -63,27 +70,71 @@ impl TryFrom<&str> for Equation {
     }
 }
 
+type EquationTestFn = fn(usize, usize) -> Option<usize>;
+
 impl Equation {
-    pub fn is_possible(&self) -> bool {
+    pub fn is_possible(&self, test_operators: &[Operator]) -> bool {
         let mut rev_oprands = self.oprands.clone();
         rev_oprands.reverse();
-        Self::can_reach(self.result, &rev_oprands)
+
+        let test_fns = test_operators
+            .iter()
+            .map(|op| match op {
+                Operator::Plus => Self::new_target_if_plus,
+                Operator::Multiply => Self::new_target_if_multiply,
+                Operator::Concatenation => Self::new_target_if_concat,
+            })
+            .collect::<Vec<_>>();
+
+        Self::can_reach(self.result, &rev_oprands, &test_fns)
     }
 
     pub fn result(&self) -> usize {
         self.result
     }
 
-    fn can_reach(target: usize, oprands: &[usize]) -> bool {
+    fn can_reach(target: usize, oprands: &[usize], test_fns: &[EquationTestFn]) -> bool {
+        if oprands.len() == 1 {
+            return target == oprands[0];
+        }
+
         if let Some(oprand) = oprands.first() {
             if target < *oprand {
                 return false;
             }
 
-            Self::can_reach(target - oprand, &oprands[1..])
-                || (target % oprand == 0 && Self::can_reach(target / oprand, &oprands[1..]))
+            test_fns.iter().any(|f| {
+                f(target, *oprand)
+                    .map(|new_target| Self::can_reach(new_target, &oprands[1..], test_fns))
+                    .unwrap_or(false)
+            })
         } else {
             target == 0
+        }
+    }
+
+    fn new_target_if_plus(target: usize, oprand0: usize) -> Option<usize> {
+        Some(target - oprand0)
+    }
+
+    fn new_target_if_multiply(target: usize, oprand0: usize) -> Option<usize> {
+        if target % oprand0 == 0 {
+            Some(target / oprand0)
+        } else {
+            None
+        }
+    }
+
+    fn new_target_if_concat(target: usize, oprand0: usize) -> Option<usize> {
+        let mut min_10_power = 10;
+        while min_10_power <= oprand0 {
+            min_10_power *= 10;
+        }
+
+        if target % min_10_power == oprand0 {
+            Some(target / min_10_power)
+        } else {
+            None
         }
     }
 }

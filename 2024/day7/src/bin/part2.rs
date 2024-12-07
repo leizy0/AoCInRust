@@ -13,7 +13,7 @@ fn main() -> Result<()> {
 
     let sum = equations
         .iter()
-        .filter(|e| e.is_possible(&[Operator::Plus, Operator::Multiply]))
+        .filter(|e| e.is_possible(&[Operator::Plus, Operator::Multiply, Operator::Concatenation]))
         .map(|e| e.result())
         .sum::<usize>();
     println!("The sum of possible equations' results is {}.", sum);
