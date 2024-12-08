@@ -4,6 +4,7 @@ use std::{
     fmt::Display,
     fs::File,
     io::{BufRead, BufReader},
+    iter,
     ops::{Add, Neg, Sub},
     path::{Path, PathBuf},
 };
@@ -213,6 +214,29 @@ impl SignalMap {
                             .filter(|p| self.is_inside(p))
                             .cloned(),
                     );
+                }
+            }
+        }
+
+        res_positions
+    }
+
+    pub fn harmonic_antinode_positions(&self) -> HashSet<Position> {
+        let mut res_positions = HashSet::new();
+        for (_, positions) in &self.signals {
+            let pos_n = positions.len();
+            for pos0_ind in 0..pos_n {
+                for pos1_ind in (pos0_ind + 1)..pos_n {
+                    let pos0 = &positions[pos0_ind];
+                    let pos1 = &positions[pos1_ind];
+                    let offset = pos1 - pos0;
+                    let left_half = iter::successors(Some(pos0.clone()), |p| {
+                        (p - &offset).filter(|p| self.is_inside(p))
+                    });
+                    let right_half = iter::successors(Some(pos1.clone()), |p| {
+                        (p + &offset).filter(|p| self.is_inside(p))
+                    });
+                    res_positions.extend(left_half.chain(right_half));
                 }
             }
         }
