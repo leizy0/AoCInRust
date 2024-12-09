@@ -3,6 +3,7 @@ use std::{
     fmt::Display,
     fs::File,
     io::{BufRead, BufReader},
+    ops::Range,
     path::{Path, PathBuf},
 };
 
@@ -48,7 +49,7 @@ impl TryFrom<&str> for FileSystem {
         }
 
         let mut blocks = vec![None; blocks_n];
-        let mut block_id = 0;
+        let mut file_id = 0;
         let mut is_free = false;
         let mut block_ind = 0;
         for c in value.chars() {
@@ -56,9 +57,9 @@ impl TryFrom<&str> for FileSystem {
             let block = if is_free {
                 None
             } else {
-                let cur_block_id = block_id;
-                block_id += 1;
-                Some(cur_block_id)
+                let cur_file_id = file_id;
+                file_id += 1;
+                Some(cur_file_id)
             };
             for set_ind in block_ind..(block_ind + cur_block_n) {
                 blocks[set_ind] = block;
@@ -73,7 +74,7 @@ impl TryFrom<&str> for FileSystem {
 }
 
 impl FileSystem {
-    pub fn compact(&mut self) {
+    pub fn compact_per_block(&mut self) {
         let blocks_n = self.blocks.len();
         let mut free_ind = 0;
         for move_ind in (0..blocks_n).rev() {
@@ -95,12 +96,92 @@ impl FileSystem {
         }
     }
 
+    pub fn compact_per_file(&mut self) {
+        let blocks_n = self.blocks.len();
+        let mut search_ind = blocks_n - 1;
+        while let Some(move_file_range) = self.back_file_range(search_ind) {
+            if move_file_range.start == 0 {
+                break;
+            }
+
+            search_ind = move_file_range.start - 1;
+            if let Some(first_enough_free_range) =
+                self.first_enough_free_range(move_file_range.len(), move_file_range.start)
+            {
+                for (move_ind, free_ind) in move_file_range.zip(first_enough_free_range) {
+                    self.blocks.swap(move_ind, free_ind);
+                }
+            }
+        }
+    }
+
     pub fn checksum(&self) -> usize {
         self.blocks
             .iter()
             .enumerate()
             .filter_map(|(ind, b)| b.as_ref().map(|id| ind * *id))
             .sum::<usize>()
+    }
+
+    fn back_file_range(&self, back_start_ind: usize) -> Option<Range<usize>> {
+        if let Some((file_back_ind, file_id)) = (0..=back_start_ind)
+            .rev()
+            .filter_map(|block_ind| {
+                self.blocks
+                    .get(block_ind)
+                    .and_then(|block| block.as_ref())
+                    .map(|file_id| (block_ind, *file_id))
+            })
+            .next()
+        {
+            let file_start_ind = (0..file_back_ind)
+                .rev()
+                .filter(|ind| {
+                    self.blocks
+                        .get(*ind)
+                        .and_then(|file_id_op| file_id_op.map(|cur_file_id| cur_file_id != file_id))
+                        .unwrap_or(true)
+                })
+                .next()
+                .map(|ind| ind + 1)
+                .unwrap_or(0);
+
+            Some(file_start_ind..(file_back_ind + 1))
+        } else {
+            None
+        }
+    }
+
+    fn first_enough_free_range(
+        &self,
+        free_blocks_n: usize,
+        search_end_ind: usize,
+    ) -> Option<Range<usize>> {
+        let mut search_ind = 0;
+        let search_end_ind = search_end_ind.min(self.blocks.len());
+        while search_ind < search_end_ind {
+            if self.blocks[search_ind].is_none() {
+                let free_end_ind = (search_ind..search_end_ind)
+                    .filter(|ind| {
+                        self.blocks
+                            .get(*ind)
+                            .map(|file_id_op| file_id_op.is_some())
+                            .unwrap_or(true)
+                    })
+                    .next()
+                    .unwrap_or(search_end_ind);
+                if free_end_ind - search_ind >= free_blocks_n {
+                    return Some(search_ind..free_end_ind);
+                } else {
+                    search_ind = free_end_ind + 1;
+                    continue;
+                }
+            }
+
+            search_ind += 1;
+        }
+
+        None
     }
 }
 

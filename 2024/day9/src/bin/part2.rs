@@ -11,10 +11,10 @@ fn main() -> Result<()> {
         )
     })?;
 
-    file_system.compact_per_block();
+    file_system.compact_per_file();
     let compact_checksum = file_system.checksum();
     println!(
-        "The checksum of given file system after compaction with one block strategy is {}.",
+        "The checksum of given file system after compaction with one file strategy is {}.",
         compact_checksum
     );
 
