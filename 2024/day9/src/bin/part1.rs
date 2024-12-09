@@ -1,0 +1,22 @@
+use anyhow::{Context, Result};
+use clap::Parser;
+use day9::CLIArgs;
+
+fn main() -> Result<()> {
+    let args = CLIArgs::parse();
+    let mut file_system = day9::read_file_system(&args.input_path).with_context(|| {
+        format!(
+            "Failed to read file system information from given file({}).",
+            args.input_path.display()
+        )
+    })?;
+
+    file_system.compact();
+    let compact_checksum = file_system.checksum();
+    println!(
+        "The checksum of given file system after compaction is {}.",
+        compact_checksum
+    );
+
+    Ok(())
+}
