@@ -133,6 +133,34 @@ impl Map {
         end_positions.len()
     }
 
+    pub fn rating_from(&self, pos: &Position) -> usize {
+        let mut rating = 0;
+        if !self.height(pos).is_some_and(|h| *h == 0) {
+            return rating;
+        }
+
+        let mut search_positions = LinkedList::from_iter(iter::once(pos.clone()));
+        while let Some(cur_pos) = search_positions.pop_front() {
+            if let Some(cur_height) = self.height(&cur_pos) {
+                if *cur_height == 9 {
+                    rating += 1;
+                    continue;
+                }
+
+                let search_height = cur_height + 1;
+                search_positions.extend(Direction::all_dirs().iter().filter_map(|dir| {
+                    cur_pos.neightbor(*dir).filter(|pos| {
+                        self.height(&pos)
+                            .map(|height| *height == search_height)
+                            .unwrap_or(false)
+                    })
+                }));
+            }
+        }
+
+        rating
+    }
+
     fn height(&self, pos: &Position) -> Option<&usize> {
         if pos.r < self.row_n && pos.c < self.col_n {
             self.heights.get(pos.r * self.row_n + pos.c)
