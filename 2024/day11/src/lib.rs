@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     error,
     fmt::Display,
     fs::File,
@@ -52,6 +53,27 @@ pub struct StoneLine {
     head_ind: Option<usize>,
 }
 
+impl Display for StoneLine {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "[")?;
+        let mut cur_ind_op = if let Some(first_ind) = self.head_ind {
+            let first_stone = &self.stones[first_ind];
+            write!(f, "{}", first_stone.n)?;
+            first_stone.next_ind
+        } else {
+            None
+        };
+
+        while let Some(cur_ind) = cur_ind_op {
+            let stone = &self.stones[cur_ind];
+            write!(f, ", {}", stone.n)?;
+            cur_ind_op = stone.next_ind;
+        }
+
+        write!(f, "]")
+    }
+}
+
 impl TryFrom<&str> for StoneLine {
     type Error = Error;
 
@@ -103,6 +125,19 @@ impl StoneLine {
         }
     }
 
+    pub fn stone_n_after_blink(&self, blink_n: usize) -> usize {
+        let mut cur_ind_op = self.head_ind;
+        let mut count = 0;
+        let mut blink_history = HashMap::<(usize, usize), usize>::new();
+        while let Some(cur_ind) = cur_ind_op {
+            count +=
+                Self::this_stone_n_after_blink(self.stones[cur_ind].n, blink_n, &mut blink_history);
+            cur_ind_op = self.stones[cur_ind].next_ind;
+        }
+
+        count
+    }
+
     pub fn count(&self) -> usize {
         self.stones.len()
     }
@@ -121,6 +156,32 @@ impl StoneLine {
         } else {
             None
         }
+    }
+
+    fn this_stone_n_after_blink(
+        n: usize,
+        blink_n: usize,
+        blink_history: &mut HashMap<(usize, usize), usize>,
+    ) -> usize {
+        if blink_n == 0 {
+            return 1;
+        } else if let Some(blink_result) = blink_history.get(&(n, blink_n)) {
+            return *blink_result;
+        }
+
+        let this_blink_result = if n == 0 {
+            Self::this_stone_n_after_blink(1, blink_n - 1, blink_history)
+        } else if let Some((left, right)) = Self::split_digits(n) {
+            Self::this_stone_n_after_blink(left, blink_n - 1, blink_history)
+                + Self::this_stone_n_after_blink(right, blink_n - 1, blink_history)
+        } else {
+            Self::this_stone_n_after_blink(n * 2024, blink_n - 1, blink_history)
+        };
+        blink_history
+            .entry((n, blink_n))
+            .or_insert(this_blink_result);
+
+        this_blink_result
     }
 }
 
