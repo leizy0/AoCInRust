@@ -1,5 +1,6 @@
 use std::{
-    collections::{HashSet, LinkedList},
+    array,
+    collections::{HashMap, HashSet, LinkedList},
     error,
     fmt::Display,
     fs::File,
@@ -35,7 +36,7 @@ pub struct CLIArgs {
     pub input_path: PathBuf,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Direction {
     Up,
     Right,
@@ -56,7 +57,7 @@ impl Direction {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Position {
     r: usize,
     c: usize,
@@ -78,10 +79,63 @@ impl Position {
     }
 }
 
+#[derive(Debug, Clone)]
+struct Sides {
+    sides: [HashMap<usize, Vec<bool>>; 4],
+    row_n: usize,
+    col_n: usize,
+}
+
+impl Sides {
+    pub fn new(row_n: usize, col_n: usize) -> Self {
+        Self {
+            sides: array::from_fn(|_| HashMap::new()),
+            row_n,
+            col_n,
+        }
+    }
+
+    pub fn count(&self) -> usize {
+        self.sides
+            .iter()
+            .map(|map| {
+                map.iter()
+                    .map(|(_, marks)| {
+                        marks
+                            .iter()
+                            .fold((0usize, false), |(range_n, last_mark), mark| {
+                                if !last_mark && *mark {
+                                    (range_n + 1, *mark)
+                                } else {
+                                    (range_n, *mark)
+                                }
+                            })
+                            .0
+                    })
+                    .sum::<usize>()
+            })
+            .sum::<usize>()
+    }
+
+    pub fn add(&mut self, pos: &Position, dir: Direction) {
+        let (dir_ind, normal_pos, tangent_pos, new_size) = match dir {
+            Direction::Up => (0, pos.r, pos.c, self.col_n),
+            Direction::Right => (1, pos.c + 1, pos.r, self.row_n),
+            Direction::Down => (2, pos.r + 1, pos.c, self.col_n),
+            Direction::Left => (3, pos.c, pos.r, self.row_n),
+        };
+
+        self.sides[dir_ind]
+            .entry(normal_pos)
+            .or_insert_with(|| vec![false; new_size])[tangent_pos] = true
+    }
+}
+
 #[derive(Debug)]
 pub struct Region {
     tile_positions: Vec<Position>,
     perimeter: usize,
+    sides: Sides,
 }
 
 impl Region {
@@ -91,6 +145,10 @@ impl Region {
 
     pub fn perimeter(&self) -> usize {
         self.perimeter
+    }
+
+    pub fn sides_n(&self) -> usize {
+        self.sides.count()
     }
 }
 
@@ -135,6 +193,7 @@ impl Map {
         let mut next_positions = LinkedList::from_iter(iter::once(start_pos.clone()));
         let mut searched_positions = HashSet::new();
         let mut perimeter = 0;
+        let mut sides = Sides::new(self.row_n, self.col_n);
         let mut tile_positions = Vec::new();
         while let Some(cur_pos) = next_positions.pop_front() {
             if !searched_positions.insert(cur_pos.clone()) {
@@ -153,6 +212,7 @@ impl Map {
                     }
                 }
 
+                sides.add(&cur_pos, dir);
                 perimeter += 1;
             }
         }
@@ -160,6 +220,7 @@ impl Map {
         Some(Region {
             tile_positions,
             perimeter,
+            sides,
         })
     }
 
