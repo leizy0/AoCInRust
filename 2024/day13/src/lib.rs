@@ -115,6 +115,10 @@ impl ClawMachine {
 
         solutions
     }
+
+    pub fn change_prize(&mut self, change_fn: impl Fn((usize, usize)) -> (usize, usize)) {
+        self.prize = change_fn(self.prize);
+    }
 }
 
 pub fn read_machines<P: AsRef<Path>>(path: P) -> Result<Vec<ClawMachine>> {
