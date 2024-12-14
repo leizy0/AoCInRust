@@ -1,8 +1,9 @@
 use std::{
+    cell::RefCell,
     error,
     fmt::Display,
     fs::File,
-    io::{BufRead, BufReader},
+    io::{stdout, BufRead, BufReader, Write},
     path::{Path, PathBuf},
 };
 
@@ -27,10 +28,19 @@ impl Display for Error {
 impl error::Error for Error {}
 
 #[derive(Debug, Parser)]
-pub struct CLIArgs {
+pub struct Part1CLIArgs {
     pub map_width: usize,
     pub map_height: usize,
     pub input_path: PathBuf,
+}
+
+#[derive(Debug, Parser)]
+pub struct Part2CLIArgs {
+    pub map_width: usize,
+    pub map_height: usize,
+    pub input_path: PathBuf,
+    pub move_start: usize,
+    pub move_step: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -78,11 +88,16 @@ impl Vector {
 pub struct Map {
     width: usize,
     height: usize,
+    marks: RefCell<Vec<bool>>,
 }
 
 impl Map {
     pub fn new(width: usize, height: usize) -> Self {
-        Self { width, height }
+        Self {
+            width,
+            height,
+            marks: RefCell::new(vec![false; width * height]),
+        }
     }
 
     pub fn quad_ind(&self, pos: &Position) -> Option<usize> {
@@ -101,6 +116,55 @@ impl Map {
 
                 Some(ind)
             }
+        }
+    }
+
+    pub fn display(&self, robots: &[Robot]) -> Result<()> {
+        self.clear_marks();
+        for robot in robots {
+            self.mark(robot.pos());
+        }
+
+        let mut lock = stdout().lock();
+        for y in 0..self.height {
+            for x in 0..self.width {
+                write!(
+                    lock,
+                    "{}",
+                    if self.is_marked(&Position::new(x, y)).unwrap_or(false) {
+                        'R'
+                    } else {
+                        '.'
+                    }
+                )?;
+            }
+            writeln!(lock)?;
+        }
+
+        Ok(())
+    }
+
+    fn clear_marks(&self) {
+        for mark in self.marks.borrow_mut().iter_mut() {
+            *mark = false;
+        }
+    }
+
+    fn mark(&self, pos: &Position) {
+        if let Some(ind) = self.pos_to_ind(pos) {
+            self.marks.borrow_mut()[ind] = true;
+        }
+    }
+
+    fn is_marked(&self, pos: &Position) -> Option<bool> {
+        self.pos_to_ind(pos).map(|ind| self.marks.borrow()[ind])
+    }
+
+    fn pos_to_ind(&self, pos: &Position) -> Option<usize> {
+        if pos.x < self.width && pos.y < self.height {
+            Some(pos.y * self.width + pos.x)
+        } else {
+            None
         }
     }
 }

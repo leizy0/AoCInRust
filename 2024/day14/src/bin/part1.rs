@@ -1,9 +1,9 @@
 use anyhow::{Context, Result};
 use clap::Parser;
-use day14::{CLIArgs, Map};
+use day14::{Map, Part1CLIArgs};
 
 fn main() -> Result<()> {
-    let args = CLIArgs::parse();
+    let args = Part1CLIArgs::parse();
     let mut robots = day14::read_robots(&args.input_path).with_context(|| {
         format!(
             "Failed to read robots from given file({}).",
