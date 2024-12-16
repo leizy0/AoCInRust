@@ -1,6 +1,6 @@
 use std::{
     cmp::Reverse,
-    collections::{BinaryHeap, HashMap},
+    collections::{BinaryHeap, HashMap, HashSet, LinkedList},
     error,
     fmt::Display,
     fs::File,
@@ -88,7 +88,7 @@ pub enum Tile {
     Floor,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Action {
     Forward,
     TurnClockwise,
@@ -152,7 +152,7 @@ impl Direction {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-struct Reindeer {
+pub struct Reindeer {
     pos: Position,
     dir: Direction,
 }
@@ -255,44 +255,86 @@ pub struct Map {
 }
 
 impl Map {
-    pub fn min_score_actions(&self) -> Option<Vec<Action>> {
-        let mut actions = Vec::new();
-        let mut src_action_of_deer = HashMap::new();
+    pub fn min_score_action_graph(&self) -> Option<(HashMap<Reindeer, HashSet<Action>>, usize)> {
+        let mut min_score = None;
+        let mut src_actions_of_deer = HashMap::new();
         let init_deer = Reindeer::new(&self.start_pos, Direction::East);
         let mut possible_states =
             BinaryHeap::from_iter(iter::once(Reverse(State::new(init_deer.clone(), 0))));
+        let mut min_score_action_graph = None;
         while let Some(Reverse(cur_state)) = possible_states.pop() {
             if let Some(src_action) = cur_state.src_action {
-                src_action_of_deer
+                src_actions_of_deer
                     .entry(cur_state.deer.clone())
-                    .or_insert(src_action);
+                    .or_insert_with(|| (cur_state.score, HashSet::new()))
+                    .1
+                    .insert(src_action);
             }
-            if cur_state.deer.pos == self.end_pos {
-                let mut cur_deer = cur_state.deer.clone();
-                while cur_deer != init_deer {
-                    let last_action = src_action_of_deer[&cur_deer];
-                    actions.push(last_action);
-                    cur_deer = cur_deer.clone_and_do_reverse(last_action, self).unwrap();
-                }
 
-                actions.reverse();
-                return Some(actions);
+            if min_score.is_some_and(|min_score| cur_state.score > min_score) {
+                break;
+            }
+
+            if cur_state.deer.pos == self.end_pos {
+                min_score.get_or_insert(cur_state.score);
+                let mut search_deers = LinkedList::from_iter(iter::once(cur_state.deer.clone()));
+                let mut searched_deers = HashSet::new();
+                while let Some(cur_deer) = search_deers.pop_front() {
+                    searched_deers.insert(cur_deer.clone());
+                    if let Some((_, src_actions)) = src_actions_of_deer.get(&cur_deer) {
+                        for action in src_actions {
+                            let src_deer = cur_deer.clone_and_do_reverse(*action, self).unwrap();
+                            if !searched_deers.contains(&src_deer) {
+                                min_score_action_graph
+                                    .get_or_insert_with(|| HashMap::new())
+                                    .entry(src_deer.clone())
+                                    .or_insert_with(|| HashSet::new())
+                                    .insert(*action);
+                                search_deers.push_back(src_deer);
+                            }
+                        }
+                    }
+                }
             }
 
             for action in Action::all_actions() {
                 if let Some(next_deer) = cur_state.deer.clone_and_do(*action, self) {
-                    if !src_action_of_deer.contains_key(&next_deer) {
-                        possible_states.push(Reverse(State::from_action(
-                            next_deer,
-                            cur_state.score + action.score(),
-                            *action,
-                        )));
+                    let next_score = cur_state.score + action.score();
+                    if src_actions_of_deer
+                        .get(&next_deer)
+                        .map(|(score, _)| next_score <= *score)
+                        .unwrap_or(true)
+                    {
+                        possible_states
+                            .push(Reverse(State::from_action(next_deer, next_score, *action)));
                     }
                 }
             }
         }
 
-        None
+        min_score_action_graph.and_then(|graph| min_score.map(|score| (graph, score)))
+    }
+
+    pub fn pos_n_on_graph(&self, actions_graph: &HashMap<Reindeer, HashSet<Action>>) -> usize {
+        let mut pos_on_path = HashSet::new();
+        let mut search_deers =
+            LinkedList::from_iter(iter::once(Reindeer::new(&self.start_pos, Direction::East)));
+        let mut searched_deers = HashSet::new();
+        while let Some(cur_deer) = search_deers.pop_front() {
+            searched_deers.insert(cur_deer.clone());
+            pos_on_path.insert(cur_deer.pos.clone());
+            if let Some(actions) = actions_graph.get(&cur_deer) {
+                for action in actions {
+                    if let Some(next_deer) = cur_deer.clone_and_do(*action, self) {
+                        if !searched_deers.contains(&next_deer) {
+                            search_deers.push_back(next_deer);
+                        }
+                    }
+                }
+            }
+        }
+
+        pos_on_path.len()
     }
 
     pub fn tile(&self, pos: &Position) -> Option<&Tile> {

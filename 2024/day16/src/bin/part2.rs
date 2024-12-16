@@ -11,8 +11,12 @@ fn main() -> Result<()> {
         )
     })?;
 
-    if let Some((_, min_score)) = map.min_score_action_graph() {
-        println!("The minimium score of completing the map is {}.", min_score);
+    if let Some((action_graph, _)) = map.min_score_action_graph() {
+        let min_score_path_pos_n = map.pos_n_on_graph(&action_graph);
+        println!(
+            "There are {} positions in map that's on at least one path with the minimium score.",
+            min_score_path_pos_n
+        );
     } else {
         eprintln!("There're no actions can complete the given map.");
     }
