@@ -5,7 +5,6 @@ use std::{
     fmt::Display,
     fs::File,
     io::{BufRead, BufReader},
-    iter,
     path::{Path, PathBuf},
 };
 
@@ -236,11 +235,11 @@ impl State {
         }
     }
 
-    pub fn from_action(deer: Reindeer, score: usize, src_action: Action) -> Self {
+    pub fn from_action(deer: Reindeer, score: usize, action: Action) -> Self {
         Self {
             deer,
             score,
-            src_action: Some(src_action),
+            src_action: Some(action),
         }
     }
 }
@@ -257,18 +256,34 @@ pub struct Map {
 impl Map {
     pub fn min_score_action_graph(&self) -> Option<(HashMap<Reindeer, HashSet<Action>>, usize)> {
         let mut min_score = None;
-        let mut src_actions_of_deer = HashMap::new();
-        let init_deer = Reindeer::new(&self.start_pos, Direction::East);
-        let mut possible_states =
-            BinaryHeap::from_iter(iter::once(Reverse(State::new(init_deer.clone(), 0))));
+        let mut src_actions_of_deer = HashMap::from([(self.init_deer(), (0, HashSet::new()))]);
+        let mut possible_states = BinaryHeap::from([Reverse(State::new(self.init_deer(), 0))]);
         let mut min_score_action_graph = None;
         while let Some(Reverse(cur_state)) = possible_states.pop() {
-            if let Some(src_action) = cur_state.src_action {
-                src_actions_of_deer
-                    .entry(cur_state.deer.clone())
-                    .or_insert_with(|| (cur_state.score, HashSet::new()))
-                    .1
-                    .insert(src_action);
+            if src_actions_of_deer
+                .get(&cur_state.deer)
+                .map(|(score, _)| cur_state.score <= *score)
+                .unwrap_or(true)
+            {
+                if let Some(src_action) = cur_state.src_action {
+                    if let Some(last_score) = src_actions_of_deer
+                        .get(&cur_state.deer)
+                        .map(|(score, _)| score)
+                    {
+                        debug_assert!(
+                            *last_score == cur_state.score,
+                            "last_score({}) != cur_score({})",
+                            last_score,
+                            cur_state.score,
+                        );
+                    }
+
+                    src_actions_of_deer
+                        .entry(cur_state.deer.clone())
+                        .or_insert_with(|| (cur_state.score, HashSet::new()))
+                        .1
+                        .insert(src_action);
+                }
             }
 
             if min_score.is_some_and(|min_score| cur_state.score > min_score) {
@@ -277,19 +292,18 @@ impl Map {
 
             if cur_state.deer.pos == self.end_pos {
                 min_score.get_or_insert(cur_state.score);
-                let mut search_deers = LinkedList::from_iter(iter::once(cur_state.deer.clone()));
-                let mut searched_deers = HashSet::new();
+                let mut search_deers = LinkedList::from([cur_state.deer.clone()]);
+                let mut searched_deers = HashSet::from([cur_state.deer.clone()]);
                 while let Some(cur_deer) = search_deers.pop_front() {
-                    searched_deers.insert(cur_deer.clone());
                     if let Some((_, src_actions)) = src_actions_of_deer.get(&cur_deer) {
                         for action in src_actions {
                             let src_deer = cur_deer.clone_and_do_reverse(*action, self).unwrap();
-                            if !searched_deers.contains(&src_deer) {
-                                min_score_action_graph
-                                    .get_or_insert_with(|| HashMap::new())
-                                    .entry(src_deer.clone())
-                                    .or_insert_with(|| HashSet::new())
-                                    .insert(*action);
+                            min_score_action_graph
+                                .get_or_insert_with(|| HashMap::new())
+                                .entry(src_deer.clone())
+                                .or_insert_with(|| HashSet::new())
+                                .insert(*action);
+                            if searched_deers.insert(src_deer.clone()) {
                                 search_deers.push_back(src_deer);
                             }
                         }
@@ -305,6 +319,17 @@ impl Map {
                         .map(|(score, _)| next_score <= *score)
                         .unwrap_or(true)
                     {
+                        if let Some(last_score) =
+                            src_actions_of_deer.get(&next_deer).map(|(score, _)| score)
+                        {
+                            debug_assert!(
+                                *last_score == next_score,
+                                "last_score({}) != next_score({})",
+                                last_score,
+                                next_score
+                            );
+                        }
+
                         possible_states
                             .push(Reverse(State::from_action(next_deer, next_score, *action)));
                     }
@@ -316,17 +341,15 @@ impl Map {
     }
 
     pub fn pos_n_on_graph(&self, actions_graph: &HashMap<Reindeer, HashSet<Action>>) -> usize {
-        let mut pos_on_path = HashSet::new();
-        let mut search_deers =
-            LinkedList::from_iter(iter::once(Reindeer::new(&self.start_pos, Direction::East)));
-        let mut searched_deers = HashSet::new();
+        let mut pos_on_path = HashSet::from([self.start_pos.clone()]);
+        let mut search_deers = LinkedList::from([self.init_deer()]);
+        let mut searched_deers = HashSet::from([self.init_deer()]);
         while let Some(cur_deer) = search_deers.pop_front() {
-            searched_deers.insert(cur_deer.clone());
-            pos_on_path.insert(cur_deer.pos.clone());
             if let Some(actions) = actions_graph.get(&cur_deer) {
                 for action in actions {
                     if let Some(next_deer) = cur_deer.clone_and_do(*action, self) {
-                        if !searched_deers.contains(&next_deer) {
+                        if searched_deers.insert(next_deer.clone()) {
+                            pos_on_path.insert(next_deer.pos.clone());
                             search_deers.push_back(next_deer);
                         }
                     }
@@ -343,6 +366,10 @@ impl Map {
         } else {
             None
         }
+    }
+
+    fn init_deer(&self) -> Reindeer {
+        Reindeer::new(&self.start_pos, Direction::East)
     }
 }
 
