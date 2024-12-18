@@ -62,8 +62,8 @@ impl Direction {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Position {
-    r: usize,
-    c: usize,
+    x: usize,
+    y: usize,
 }
 
 impl TryFrom<&str> for Position {
@@ -71,36 +71,36 @@ impl TryFrom<&str> for Position {
 
     fn try_from(value: &str) -> std::result::Result<Self, Self::Error> {
         let comma_pos = value.find(',').ok_or(Error::NoCommaInPositonText)?;
-        let c_text = &value[..comma_pos];
-        let c = c_text
+        let x_text = &value[..comma_pos];
+        let x = x_text
             .parse::<usize>()
-            .map_err(|_| Error::InvalidCoordinateText(c_text.to_string()))?;
-        let r_text = &value[(comma_pos + 1)..];
-        let r = r_text
+            .map_err(|_| Error::InvalidCoordinateText(x_text.to_string()))?;
+        let y_text = &value[(comma_pos + 1)..];
+        let y = y_text
             .parse::<usize>()
-            .map_err(|_| Error::InvalidCoordinateText(r_text.to_string()))?;
+            .map_err(|_| Error::InvalidCoordinateText(y_text.to_string()))?;
 
-        Ok(Position::new(r, c))
+        Ok(Position::new(x, y))
     }
 }
 
 impl Display for Position {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "({}, {})", self.r, self.c)
+        write!(f, "({}, {})", self.x, self.y)
     }
 }
 
 impl Position {
-    pub fn new(r: usize, c: usize) -> Self {
-        Self { r, c }
+    pub fn new(x: usize, y: usize) -> Self {
+        Self { x, y }
     }
 
     pub fn neighbor(&self, dir: Direction) -> Option<Self> {
         match dir {
-            Direction::Up if self.r > 0 => Some(Position::new(self.r - 1, self.c)),
-            Direction::Right => Some(Position::new(self.r, self.c + 1)),
-            Direction::Down => Some(Position::new(self.r + 1, self.c)),
-            Direction::Left if self.c > 0 => Some(Position::new(self.r, self.c - 1)),
+            Direction::Up if self.y > 0 => Some(Position::new(self.x, self.y - 1)),
+            Direction::Right => Some(Position::new(self.x + 1, self.y)),
+            Direction::Down => Some(Position::new(self.x, self.y + 1)),
+            Direction::Left if self.x > 0 => Some(Position::new(self.x - 1, self.y)),
             _ => None,
         }
     }
@@ -184,14 +184,14 @@ impl Map {
 
     fn pos_to_ind(&self, pos: &Position) -> Option<usize> {
         if self.is_inside(pos) {
-            Some(pos.r * self.col_n + pos.c)
+            Some(pos.y * self.col_n + pos.x)
         } else {
             None
         }
     }
 
     fn is_inside(&self, pos: &Position) -> bool {
-        pos.r < self.row_n && pos.c < self.col_n
+        pos.y < self.row_n && pos.x < self.col_n
     }
 }
 
