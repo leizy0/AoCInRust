@@ -112,7 +112,7 @@ enum Tile {
     Corrupted,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Map {
     tiles: Vec<Tile>,
     row_n: usize,
@@ -137,6 +137,12 @@ impl Map {
             if let Some(tile_mut) = self.tile_mut(pos) {
                 *tile_mut = Tile::Corrupted;
             }
+        }
+    }
+
+    pub fn reset(&mut self) {
+        for tile in &mut self.tiles {
+            *tile = Tile::Fine;
         }
     }
 
