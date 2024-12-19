@@ -1,5 +1,4 @@
 use std::{
-    collections::HashMap,
     error,
     fmt::Display,
     fs::File,
@@ -56,7 +55,7 @@ impl Design {
     }
 
     pub fn possible_ways_n(&self, patterns: &[String]) -> usize {
-        let mut checked_design_ways = HashMap::new();
+        let mut checked_design_ways = vec![None; self.text.len()];
         self.possible_ways_n_recur(patterns, 0, &mut checked_design_ways)
     }
 
@@ -64,15 +63,15 @@ impl Design {
         &self,
         patterns: &[String],
         ind: usize,
-        checked_design_ways: &mut HashMap<String, usize>,
+        checked_design_ways: &mut [Option<usize>],
     ) -> usize {
         let text_len = self.text.len();
         if ind >= text_len {
             return 1;
         }
 
-        if let Some(checked_ways_n) = checked_design_ways.get(&self.text[ind..]) {
-            return *checked_ways_n;
+        if let Some(checked_ways_n) = checked_design_ways[ind] {
+            return checked_ways_n;
         }
 
         let mut ways_n = 0;
@@ -82,9 +81,8 @@ impl Design {
                 ways_n += self.possible_ways_n_recur(patterns, ind + pat_len, checked_design_ways);
             }
         }
-        checked_design_ways
-            .entry(self.text[ind..].to_string())
-            .or_insert(ways_n);
+        debug_assert!(checked_design_ways[ind].is_none());
+        checked_design_ways[ind].get_or_insert(ways_n);
 
         ways_n
     }
