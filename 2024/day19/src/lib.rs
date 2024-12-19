@@ -1,5 +1,5 @@
 use std::{
-    collections::HashSet,
+    collections::HashMap,
     error,
     fmt::Display,
     fs::File,
@@ -52,36 +52,41 @@ impl Design {
     }
 
     pub fn is_possible_with(&self, patterns: &[String]) -> bool {
-        let mut impossible_designs = HashSet::new();
-        self.is_possible_with_recur(patterns, 0, &mut impossible_designs)
+        self.possible_ways_n(patterns) > 0
     }
 
-    fn is_possible_with_recur(
+    pub fn possible_ways_n(&self, patterns: &[String]) -> usize {
+        let mut checked_design_ways = HashMap::new();
+        self.possible_ways_n_recur(patterns, 0, &mut checked_design_ways)
+    }
+
+    fn possible_ways_n_recur(
         &self,
         patterns: &[String],
         ind: usize,
-        impossible_designs: &mut HashSet<String>,
-    ) -> bool {
+        checked_design_ways: &mut HashMap<String, usize>,
+    ) -> usize {
         let text_len = self.text.len();
         if ind >= text_len {
-            return true;
+            return 1;
         }
 
-        if impossible_designs.contains(&self.text[ind..]) {
-            return false;
+        if let Some(checked_ways_n) = checked_design_ways.get(&self.text[ind..]) {
+            return *checked_ways_n;
         }
 
+        let mut ways_n = 0;
         for pattern in patterns.iter().filter(|p| ind + p.len() <= text_len) {
             let pat_len = pattern.len();
-            if &self.text[ind..(ind + pat_len)] == pattern
-                && self.is_possible_with_recur(patterns, ind + pat_len, impossible_designs)
-            {
-                return true;
+            if &self.text[ind..(ind + pat_len)] == pattern {
+                ways_n += self.possible_ways_n_recur(patterns, ind + pat_len, checked_design_ways);
             }
         }
+        checked_design_ways
+            .entry(self.text[ind..].to_string())
+            .or_insert(ways_n);
 
-        impossible_designs.insert(self.text[ind..].to_string());
-        false
+        ways_n
     }
 }
 
