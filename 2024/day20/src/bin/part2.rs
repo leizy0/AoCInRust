@@ -17,7 +17,7 @@ fn main() -> Result<()> {
     };
 
     let cheat_save_threshold = 100;
-    let cheat_duration = 2;
+    let cheat_duration = 20;
     let saving_map = map.saving_cheats_n(cheat_duration);
     let cheat_candidates_n = saving_map
         .iter()

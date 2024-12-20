@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashSet, LinkedList},
+    collections::{HashMap, HashSet, LinkedList},
     error,
     fmt::Display,
     fs::File,
@@ -153,6 +153,9 @@ impl Cheat {
 pub struct Program {
     pos: Position,
     cheat: Option<Cheat>,
+    cheat_start_time: Option<usize>,
+    cheat_end_time: Option<usize>,
+    cheat_start_pos: Option<Position>,
 }
 
 impl Program {
@@ -160,45 +163,74 @@ impl Program {
         Self {
             pos: pos.clone(),
             cheat: None,
+            cheat_start_time: None,
+            cheat_end_time: None,
+            cheat_start_pos: None,
         }
     }
 
-    pub fn done_cheat(&self) -> Option<&Cheat> {
-        self.cheat.as_ref()
+    pub fn cheat_start_time(&self) -> Option<usize> {
+        self.cheat_start_time
+    }
+
+    pub fn done_cheat(&self) -> Option<(&Cheat, usize, usize)> {
+        self.cheat.as_ref().map(|cheat| {
+            (
+                cheat,
+                self.cheat_start_time.unwrap(),
+                self.cheat_end_time.unwrap(),
+            )
+        })
+    }
+
+    pub fn clone_and_start_cheating(&self, cur_time: usize) -> Option<Self> {
+        if self.cheat_start_time.is_none() {
+            debug_assert!(self.cheat.is_none() && self.cheat_start_pos.is_none());
+            Some(Self {
+                cheat_start_time: Some(cur_time),
+                cheat_start_pos: Some(self.pos.clone()),
+                ..self.clone()
+            })
+        } else {
+            None
+        }
+    }
+
+    pub fn clone_and_end_cheating(&self, cur_time: usize, map: &Map) -> Option<Self> {
+        if self.cheat_start_time.is_some() {
+            if let Some(cheat_start_pos) = &self.cheat_start_pos {
+                if &self.pos != cheat_start_pos
+                    && self.cheat.is_none()
+                    && map
+                        .tile(&self.pos)
+                        .map_or(false, |tile| *tile == Tile::Track)
+                {
+                    debug_assert!(self.cheat_end_time.is_none());
+                    return Some(Self {
+                        cheat: Some(Cheat::new(cheat_start_pos, &self.pos)),
+                        cheat_end_time: Some(cur_time),
+                        ..self.clone()
+                    });
+                }
+            }
+        }
+
+        None
     }
 
     pub fn clone_and_go(&self, map: &Map, dir: Direction) -> Option<Self> {
         self.pos
             .neighbor(dir)
-            .filter(|pos| map.tile(pos).map_or(false, |tile| *tile == Tile::Track))
-            .map(|next_position| Self {
-                pos: next_position,
-                cheat: self.cheat.clone(),
+            .and_then(|pos| map.tile(&pos).map(|tile| (pos, tile)))
+            .filter(|(_, tile)| self.is_cheating() || **tile == Tile::Track)
+            .map(|(next_position, _)| Self {
+                pos: next_position.clone(),
+                ..self.clone()
             })
     }
 
-    pub fn clone_and_cheat(&self, map: &Map, dir: Direction) -> Option<Self> {
-        if self.cheat.is_some() {
-            return None;
-        }
-
-        if let Some(start_pos) = self
-            .pos
-            .neighbor(dir)
-            .filter(|pos| map.tile(pos).map_or(false, |tile| *tile == Tile::Wall))
-        {
-            if let Some(end_pos) = start_pos
-                .neighbor(dir)
-                .filter(|pos| map.tile(pos).map_or(false, |tile| *tile == Tile::Track))
-            {
-                return Some(Self {
-                    pos: end_pos.clone(),
-                    cheat: Some(Cheat::new(&start_pos, &end_pos)),
-                });
-            }
-        }
-
-        None
+    pub fn is_cheating(&self) -> bool {
+        self.cheat_start_time.is_some() && self.cheat_end_time.is_none()
     }
 
     pub fn pos(&self) -> &Position {
@@ -217,13 +249,82 @@ pub struct Map {
 
 impl Map {
     pub fn fastest_steps_n(&self) -> Option<usize> {
-        let mut search_states = LinkedList::from([(self.start_pos.clone(), 0)]);
-        let mut searched_positions = HashSet::from([self.start_pos.clone()]);
-        while let Some((cur_pos, cur_steps_n)) = search_states.pop_front() {
-            if cur_pos == self.end_pos {
-                return Some(cur_steps_n);
+        self.min_time_from_end().get(&self.start_pos).copied()
+    }
+
+    pub fn saving_cheats_n(&self, cheat_duration: usize) -> HashMap<usize, usize> {
+        let mut cheats_steps_n = HashMap::new();
+        let mut search_states = LinkedList::from([(Program::new(&self.start_pos), 0)]);
+        let mut searched_programs = HashSet::from([Program::new(&self.start_pos)]);
+        let min_time_from_end = self.min_time_from_end();
+        let Some(no_cheat_pico_sec_n) = min_time_from_end.get(&self.start_pos).copied() else {
+            return HashMap::new();
+        };
+        while let Some((cur_program, cur_pico_sec_n)) = search_states.pop_front() {
+            if cur_pico_sec_n > no_cheat_pico_sec_n {
+                continue;
             }
 
+            if *cur_program.pos() == self.end_pos {
+                if let Some((cheat, _, _)) = cur_program.done_cheat() {
+                    // Complete the map.
+                    cheats_steps_n
+                        .entry(cheat.clone())
+                        .or_insert(cur_pico_sec_n);
+                }
+            }
+
+            if let Some(cheat_start_time) = cur_program.cheat_start_time() {
+                if cur_program.is_cheating() && cheat_start_time + cheat_duration < cur_pico_sec_n {
+                    // Cheat timeout.
+                    continue;
+                }
+            }
+
+            if let Some(cheating_program) = cur_program.clone_and_start_cheating(cur_pico_sec_n) {
+                if searched_programs.insert(cheating_program.clone()) {
+                    // Start cheat.
+                    search_states.push_front((cheating_program, cur_pico_sec_n));
+                }
+            }
+
+            if let Some(cheated_program) = cur_program.clone_and_end_cheating(cur_pico_sec_n, self)
+            {
+                // End cheat.
+                let (cur_cheat, _, _) = cheated_program.done_cheat().unwrap();
+                let left_pico_sec_n = min_time_from_end.get(&cur_cheat.end_pos).unwrap();
+                let total_pico_sec_n = cur_pico_sec_n + left_pico_sec_n;
+                cheats_steps_n
+                    .entry(cur_cheat.clone())
+                    .or_insert(total_pico_sec_n);
+            }
+
+            for next_program in Direction::all_dirs()
+                .iter()
+                .filter_map(|dir| cur_program.clone_and_go(self, *dir))
+            {
+                // Move.
+                if searched_programs.insert(next_program.clone()) {
+                    search_states.push_back((next_program, cur_pico_sec_n + 1));
+                }
+            }
+        }
+
+        let mut savings_map = HashMap::new();
+        for saving_pico_sec_n in cheats_steps_n
+            .iter()
+            .filter_map(|(_, pico_sec_n)| no_cheat_pico_sec_n.checked_sub(*pico_sec_n))
+        {
+            *savings_map.entry(saving_pico_sec_n).or_insert(0) += 1;
+        }
+
+        savings_map
+    }
+
+    pub fn min_time_from_end(&self) -> HashMap<Position, usize> {
+        let mut search_states = LinkedList::from([(self.end_pos.clone(), 0)]);
+        let mut min_time_from_end = HashMap::from([(self.end_pos.clone(), 0)]);
+        while let Some((cur_pos, cur_steps_n)) = search_states.pop_front() {
             for next_pos in Direction::all_dirs().iter().filter_map(|dir| {
                 cur_pos.neighbor(*dir).filter(|pos| {
                     self.tile(&pos)
@@ -231,52 +332,17 @@ impl Map {
                         .unwrap_or(false)
                 })
             }) {
-                if searched_positions.insert(next_pos.clone()) {
-                    search_states.push_back((next_pos, cur_steps_n + 1));
+                let next_steps_n = cur_steps_n + 1;
+                if !min_time_from_end.contains_key(&next_pos) {
+                    min_time_from_end
+                        .entry(next_pos.clone())
+                        .or_insert(next_steps_n);
+                    search_states.push_back((next_pos, next_steps_n));
                 }
             }
         }
 
-        None
-    }
-
-    pub fn cheats_steps_n(&self, threshold_steps_n: usize) -> usize {
-        let mut cheats_n = 0;
-        let mut search_states = LinkedList::from([(Program::new(&self.start_pos), 0)]);
-        let mut searched_programs = HashSet::from([Program::new(&self.start_pos)]);
-        while let Some((cur_program, cur_steps_n)) = search_states.pop_front() {
-            if cur_steps_n > threshold_steps_n {
-                continue;
-            }
-
-            if *cur_program.pos() == self.end_pos {
-                if let Some(_cheat) = cur_program.done_cheat() {
-                    cheats_n += 1;
-                }
-            }
-
-            for next_program in Direction::all_dirs()
-                .iter()
-                .filter_map(|dir| cur_program.clone_and_go(self, *dir))
-            {
-                if searched_programs.insert(next_program.clone()) {
-                    search_states.push_back((next_program, cur_steps_n + 1));
-                }
-            }
-
-            if cur_program.done_cheat().is_none() {
-                for next_cheated_program in Direction::all_dirs()
-                    .iter()
-                    .filter_map(|dir| cur_program.clone_and_cheat(self, *dir))
-                {
-                    if searched_programs.insert(next_cheated_program.clone()) {
-                        search_states.push_back((next_cheated_program, cur_steps_n + 2));
-                    }
-                }
-            }
-        }
-
-        cheats_n
+        min_time_from_end
     }
 
     pub fn tile(&self, pos: &Position) -> Option<&Tile> {
