@@ -411,7 +411,7 @@ impl MapBuilder {
                     Tile::Floor
                 }
                 'E' => {
-                    if let Some(last_pos) = self.start_pos.as_ref().take() {
+                    if let Some(last_pos) = self.end_pos.as_ref().take() {
                         return Err(Error::MultipleEndPosition(last_pos.clone(), pos));
                     }
 
