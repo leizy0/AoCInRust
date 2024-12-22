@@ -12,6 +12,7 @@ use clap::Parser;
 #[derive(Debug)]
 pub enum Error {
     InvalidSecretNumberText(String),
+    InvalidSliceForChangeSeq(usize, usize),
 }
 
 impl Display for Error {
@@ -20,6 +21,11 @@ impl Display for Error {
             Error::InvalidSecretNumberText(s) => {
                 write!(f, "Invalid text({}) for secret number.", s)
             }
+            Error::InvalidSliceForChangeSeq(expect_len, this_len) => write!(
+                f,
+                "Invalid slice for change sequence, expect {} numbers in sequence, given {}.",
+                expect_len, this_len
+            ),
         }
     }
 }
@@ -29,6 +35,34 @@ impl error::Error for Error {}
 #[derive(Debug, Parser)]
 pub struct CLIArgs {
     pub input_path: PathBuf,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ChangeSeq<const N: usize> {
+    seq: [isize; N],
+}
+
+impl<const N: usize> TryFrom<&[isize]> for ChangeSeq<N> {
+    type Error = Error;
+
+    fn try_from(value: &[isize]) -> std::result::Result<Self, Self::Error> {
+        if value.len() != N {
+            Err(Error::InvalidSliceForChangeSeq(N, value.len()))
+        } else {
+            let mut seq = [0; N];
+            for ind in 0..N {
+                seq[ind] = value[ind];
+            }
+
+            Ok(Self { seq })
+        }
+    }
+}
+
+impl<const N: usize> Display for ChangeSeq<N> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self.seq)
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -59,6 +93,10 @@ impl Iterator for SecretNumber {
 impl SecretNumber {
     pub fn new(n: usize) -> Self {
         Self { n }
+    }
+
+    pub fn n(&self) -> usize {
+        self.n
     }
 
     pub fn generate(&mut self) -> usize {
