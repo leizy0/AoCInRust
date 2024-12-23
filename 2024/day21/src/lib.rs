@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashSet, LinkedList},
+    collections::{HashMap, HashSet, LinkedList},
     error,
     fmt::{Debug, Display},
     fs::File,
@@ -102,7 +102,7 @@ pub trait UI: Debug {
 #[derive(Debug)]
 pub struct Keypad {
     keys: Vec<Option<char>>,
-    keys_set: HashSet<char>,
+    keys_ind: HashMap<char, usize>,
     row_n: usize,
     col_n: usize,
     start_pos: Position,
@@ -182,7 +182,7 @@ impl UI for Keypad {
     fn input(&self, code: &str) -> Result<Vec<Vec<char>>, Error> {
         code.chars()
             .map(|c| {
-                if self.keys_set.contains(&c) {
+                if self.keys_ind.contains_key(&c) {
                     Ok(c)
                 } else {
                     Err(Error::InvalidKey(c))
@@ -209,11 +209,11 @@ impl Keypad {
             Some('0'),
             Some('A'),
         ]);
-        let keys_set = Self::keys_set_from_keys(&keys);
+        let keys_pos = Self::keys_ind_from_keys(&keys);
 
         Self {
             keys,
-            keys_set,
+            keys_ind: keys_pos,
             row_n: 4,
             col_n: 3,
             start_pos: Position::new(3, 2),
@@ -230,15 +230,21 @@ impl Keypad {
             Some(Down.key()),
             Some(Right.key()),
         ]);
-        let keys_set = Self::keys_set_from_keys(&keys);
+        let keys_pos = Self::keys_ind_from_keys(&keys);
 
         Self {
             keys,
-            keys_set,
+            keys_ind: keys_pos,
             row_n: 2,
             col_n: 3,
             start_pos: Position::new(0, 2),
         }
+    }
+
+    pub fn pos(&self, key: char) -> Option<Position> {
+        self.keys_ind
+            .get(&key)
+            .and_then(|ind| self.ind_to_pos(*ind))
     }
 
     fn is_inside(&self, pos: &Position) -> bool {
@@ -258,8 +264,17 @@ impl Keypad {
         }
     }
 
-    fn keys_set_from_keys(keys: &Vec<Option<char>>) -> HashSet<char> {
-        keys.iter().flat_map(|key_op| *key_op).collect()
+    fn ind_to_pos(&self, ind: usize) -> Option<Position> {
+        self.keys
+            .get(ind)
+            .and_then(|key_op| key_op.map(|_key| Position::new(ind / self.col_n, ind % self.col_n)))
+    }
+
+    fn keys_ind_from_keys(keys: &Vec<Option<char>>) -> HashMap<char, usize> {
+        keys.iter()
+            .enumerate()
+            .flat_map(|(ind, key_op)| key_op.map(|key| (key, ind)))
+            .collect()
     }
 }
 
