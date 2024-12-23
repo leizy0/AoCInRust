@@ -95,26 +95,38 @@ impl ComputerLinkGraph {
     }
 
     pub fn max_all_connected_groups(&self) -> HashSet<Vec<Computer>> {
-        let mut groups = HashSet::new();
+        let mut groups = HashMap::new();
         for (computer, neighbors) in self.link_map.iter() {
             for neighbor in neighbors {
                 let mut link_group = Vec::from([computer.clone(), neighbor.clone()]);
                 link_group.sort_unstable();
-                groups.insert(link_group);
+                if !groups.contains_key(&link_group) {
+                    let candidates = neighbors
+                        .intersection(&self.link_map[neighbor])
+                        .cloned()
+                        .collect::<Vec<_>>();
+                    groups.insert(link_group, candidates);
+                }
             }
         }
 
         loop {
-            let mut next_groups = HashSet::new();
-            for group in groups.iter() {
-                for (computer, neighbors) in self.link_map.iter() {
+            let mut next_groups = HashMap::new();
+            for (group, candidates) in groups.iter() {
+                for computer in candidates {
+                    let neighbors = &self.link_map[computer];
                     if !group.binary_search(computer).is_ok()
                         && group.iter().all(|member| neighbors.contains(member))
                     {
                         let mut new_group = group.clone();
                         new_group.push(computer.clone());
                         new_group.sort_unstable();
-                        next_groups.insert(new_group);
+                        let new_candidates = candidates
+                            .iter()
+                            .filter(|computer| neighbors.contains(computer))
+                            .cloned()
+                            .collect();
+                        next_groups.insert(new_group, new_candidates);
                     }
                 }
             }
@@ -126,7 +138,7 @@ impl ComputerLinkGraph {
             }
         }
 
-        groups
+        groups.into_iter().map(|(group, _)| group).collect()
     }
 }
 
