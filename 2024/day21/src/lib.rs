@@ -14,12 +14,14 @@ use clap::Parser;
 #[derive(Debug)]
 pub enum Error {
     InvalidKey(char),
+    NoUIAvailable,
 }
 
 impl Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Error::InvalidKey(key) => write!(f, "Invalid key({}).", key),
+            Error::NoUIAvailable => write!(f, "There should be at least one UI to input key."),
         }
     }
 }
@@ -94,6 +96,8 @@ impl Position {
 
 pub trait UI: Debug {
     fn start_pos(&self) -> Position;
+    fn pos(&self, key: char) -> Option<Position>;
+    fn key(&self, pos: &Position) -> Option<&char>;
     fn seek_key_steps_n(&self, start_pos: &Position, key: char) -> Option<(usize, Position)>;
     fn seek_key(&self, start_pos: &Position, key: char) -> Option<(Vec<Vec<Direction>>, Position)>;
     fn input(&self, code: &str) -> Result<Vec<Vec<char>>, Error>;
@@ -111,6 +115,17 @@ pub struct Keypad {
 impl UI for Keypad {
     fn start_pos(&self) -> Position {
         self.start_pos.clone()
+    }
+
+    fn pos(&self, key: char) -> Option<Position> {
+        self.keys_ind
+            .get(&key)
+            .and_then(|ind| self.ind_to_pos(*ind))
+    }
+
+    fn key(&self, pos: &Position) -> Option<&char> {
+        self.pos_to_ind(pos)
+            .and_then(|ind| self.keys.get(ind).and_then(|key_op| key_op.as_ref()))
     }
 
     fn seek_key_steps_n(&self, start_pos: &Position, key: char) -> Option<(usize, Position)> {
@@ -241,19 +256,8 @@ impl Keypad {
         }
     }
 
-    pub fn pos(&self, key: char) -> Option<Position> {
-        self.keys_ind
-            .get(&key)
-            .and_then(|ind| self.ind_to_pos(*ind))
-    }
-
     fn is_inside(&self, pos: &Position) -> bool {
         self.key(pos).is_some()
-    }
-
-    fn key(&self, pos: &Position) -> Option<&char> {
-        self.pos_to_ind(pos)
-            .and_then(|ind| self.keys.get(ind).and_then(|key_op| key_op.as_ref()))
     }
 
     fn pos_to_ind(&self, pos: &Position) -> Option<usize> {
@@ -287,6 +291,14 @@ pub struct Robot {
 impl UI for Robot {
     fn start_pos(&self) -> Position {
         self.ui.start_pos()
+    }
+
+    fn pos(&self, key: char) -> Option<Position> {
+        self.ui.pos(key)
+    }
+
+    fn key(&self, pos: &Position) -> Option<&char> {
+        self.ui.key(pos)
     }
 
     fn seek_key_steps_n(&self, start_pos: &Position, key: char) -> Option<(usize, Position)> {
