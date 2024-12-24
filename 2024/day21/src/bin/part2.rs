@@ -2,7 +2,7 @@ use std::{collections::HashMap, iter};
 
 use anyhow::{Context, Result};
 use clap::Parser;
-use day21::{CLIArgs, Error, Keypad, Position, Robot, UI};
+use day21::{CLIArgs, DoorCode, Error, Keypad, Position, UI};
 
 fn main() -> Result<()> {
     let args = CLIArgs::parse();
@@ -14,24 +14,16 @@ fn main() -> Result<()> {
     })?;
 
     let middle_level_count = 25;
-    let mut searched_key_seeking_min_keys_n = HashMap::new();
+    let door_ui = Keypad::new_numeric();
+    let robot_ui = Keypad::new_directional();
+    let ui_chain = iter::repeat_n(&robot_ui as &dyn UI, 1 + middle_level_count)
+        .chain(iter::once(&door_ui as &dyn UI))
+        .collect::<Vec<&dyn UI>>();
+    let mut searched_control_min_keys_n = HashMap::new();
     let mut sum_of_complexities = 0;
     for code in &door_codes {
-        let first_robot = Robot::new(Keypad::new_numeric());
-        let first_robot_key_seqs = first_robot.input(code.text())?;
-        let final_robot_min_keys_n = first_robot_key_seqs
-            .iter()
-            .map(|robot_key_seq| {
-                robot_min_keys_n(
-                    robot_key_seq,
-                    middle_level_count,
-                    &mut searched_key_seeking_min_keys_n,
-                )
-                .unwrap()
-            })
-            .min()
-            .unwrap();
-        sum_of_complexities += final_robot_min_keys_n * code.number();
+        let min_keys_n = input_min_keys_n(code, &ui_chain, &mut searched_control_min_keys_n)?;
+        sum_of_complexities += min_keys_n * code.number();
     }
 
     println!(
@@ -42,75 +34,86 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn robot_min_keys_n(
-    robot_keys: &[char],
-    robot_level: usize,
-    searched_key_seeking_min_keys_n: &mut HashMap<(Position, char, usize), usize>,
+fn input_min_keys_n(
+    code: &DoorCode,
+    ui_chain: &[&dyn UI],
+    control_records: &mut HashMap<(Position, char, usize), usize>,
 ) -> Result<usize, Error> {
+    let keys = code.text();
+    if keys.is_empty() {
+        return Ok(0);
+    }
+
+    if ui_chain.is_empty() {
+        return Err(Error::NoUIAvailable);
+    }
+
     let mut min_keys_n = 0;
-    let robot_keypad = Keypad::new_directional();
-    let mut cur_position = robot_keypad.start_pos();
-    for key in robot_keys {
-        let seek_min_keys_n = seek_key_min_keys_n_recur(
-            &cur_position,
-            *key,
-            robot_level,
-            searched_key_seeking_min_keys_n,
-        )?;
-        min_keys_n += seek_min_keys_n;
-        cur_position = robot_keypad
-            .pos(*key)
-            .expect(&format!("The robot keypad ui should have key {}.", *key));
+    let ui_level = ui_chain.len() - 1;
+    let ui = ui_chain[ui_level];
+    let mut cur_pos = ui.start_pos();
+    for key in keys.chars() {
+        min_keys_n += control_min_keys_n_recur(&cur_pos, key, ui_chain, ui_level, control_records)?;
+        cur_pos = ui
+            .pos(key)
+            .expect(&format!("After seeking, given ui should have key {}.", key));
     }
 
     Ok(min_keys_n)
 }
 
-fn seek_key_min_keys_n_recur(
+fn control_min_keys_n_recur(
     start_pos: &Position,
     key: char,
-    level: usize,
-    searched_key_seeking_min_keys_n: &mut HashMap<(Position, char, usize), usize>,
+    ui_chain: &[&dyn UI],
+    target_level: usize,
+    control_records: &mut HashMap<(Position, char, usize), usize>,
 ) -> Result<usize, Error> {
-    let keypad = Keypad::new_directional();
-    if level == 0 {
+    if target_level == 0 {
         return Ok(1);
     }
 
-    let searched_map_key = (start_pos.clone(), key, level);
-    if let Some(min_keys_n) = searched_key_seeking_min_keys_n.get(&searched_map_key) {
-        return Ok(*min_keys_n);
+    let record_key = (start_pos.clone(), key, target_level);
+    if let Some(recorded_min_keys_n) = control_records.get(&record_key) {
+        return Ok(*recorded_min_keys_n);
     }
 
-    let (all_path, _) = keypad.seek_key(start_pos, key).expect(&format!(
-        "Robot should find the given key({}) from {:?} at level {}.",
-        key, start_pos, level
+    let target_ui = ui_chain[target_level];
+    let (paths, _) = target_ui.seek_key(start_pos, key).expect(&format!(
+        "Given ui chain should find the given key({}) from {:?} at level {}.",
+        key, start_pos, target_level
     ));
-    let mut all_min_keys_n = vec![0; all_path.len()];
-    for (path_ind, dirs) in all_path.iter().enumerate() {
-        let mut cur_pos = keypad.start_pos();
-        for low_level_key in dirs.iter().map(|dir| dir.key()).chain(iter::once('A')) {
-            let low_level_min_keys_n = seek_key_min_keys_n_recur(
+    let mut control_min_keys_n_in_paths = vec![0; paths.len()];
+    let control_level = target_level - 1;
+    let control_ui = ui_chain[control_level];
+    for (path_ind, path) in paths.iter().enumerate() {
+        let mut cur_pos = control_ui.start_pos();
+        for control_key in path.iter().map(|dir| dir.key()).chain(iter::once('A')) {
+            let control_min_keys_n = control_min_keys_n_recur(
                 &cur_pos,
-                low_level_key,
-                level - 1,
-                searched_key_seeking_min_keys_n,
+                control_key,
+                ui_chain,
+                control_level,
+                control_records,
             )?;
-            all_min_keys_n[path_ind] += low_level_min_keys_n;
-            cur_pos = keypad.pos(low_level_key).expect(&format!(
-                "The robot keypad ui should have key {}.",
-                low_level_key
-            ));
+            control_min_keys_n_in_paths[path_ind] += control_min_keys_n;
+            cur_pos = control_ui
+                .pos(control_key)
+                .expect(&format!("The control ui should have key {}.", control_key));
         }
     }
 
-    let min_keys_n = all_min_keys_n.iter().min().copied().expect(&format!(
-        "There should be at least one path that can seek key {} at level {}.",
-        key, level
+    let control_min_keys_n = control_min_keys_n_in_paths
+        .iter()
+        .min()
+        .copied()
+        .expect(&format!(
+        "There should be at least one path that can control target ui to seek key {} at level {}.",
+        key, control_level
     ));
-    searched_key_seeking_min_keys_n
-        .entry(searched_map_key)
-        .or_insert(min_keys_n);
+    control_records
+        .entry(record_key)
+        .or_insert(control_min_keys_n);
 
-    Ok(min_keys_n)
+    Ok(control_min_keys_n)
 }
